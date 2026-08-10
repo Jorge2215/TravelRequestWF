@@ -208,4 +208,75 @@ The following entries were merged from files in `.squad/decisions/inbox/`. Dupli
 
 ---
 
+---
+
+### From: aragorn-er-diagram-reconciliation.md
+
+# ER Diagram Reconciliation — Aragorn
+
+### 2026-08-09T22:09:51-03:00: Decision
+**By:** Aragorn
+**What:** ER diagram schema (Empleados, SolicitudesViaje, DocumentosAdjuntos, LogAuditoria) is consistent with prior decisions and WI-1/WI-2/WI-10. Adopted as the concrete schema reference. English C#/EF Core naming mapped below.
+**Why:** The diagram confirms: (1) self-referencing SuperiorID for manager hierarchy = our "hardcoded seed data" approach, (2) separate LogAuditoria table = our WI-10 design, (3) no "ViajesAsignados" table = consistent with Status=Approved decision, (4) DocumentosAdjuntos = our RequestDocument. No conflicts found with standing decisions.
+
+### 2026-08-09T22:09:51-03:00: Decision
+**By:** Aragorn
+**What:** WI-1/WI-2 data model updated with concrete field names from ER diagram. English EF Core entity mapping:
+
+| Spanish (Diagram) | English (EF Core Entity) | Notes |
+|---|---|---|
+| Empleados | `Employee` | |
+| EmpleadoID | `Employee.Id` | PK |
+| Nombre | `Employee.Name` | |
+| Email | `Employee.Email` | |
+| Departamento | `Employee.Department` | |
+| SuperiorID | `Employee.SuperiorId` | FK self-ref, nullable for top-level |
+| SolicitudesViaje | `TravelRequest` | |
+| SolicitudID | `TravelRequest.Id` | PK |
+| EmpleadoID | `TravelRequest.EmployeeId` | FK → Employee |
+| AprobadorID | `TravelRequest.ApproverId` | FK → Employee (⚠️ see design question below) |
+| Destino | `TravelRequest.Destination` | |
+| FechaInicio | `TravelRequest.StartDate` | |
+| FechaFin | `TravelRequest.EndDate` | |
+| Motivo | `TravelRequest.Purpose` | |
+| Estado | `TravelRequest.Status` | Enum: Pending, Approved, Rejected, Returned |
+| DocumentosAdjuntos | `RequestDocument` | |
+| DocumentoID | `RequestDocument.Id` | PK |
+| SolicitudID | `RequestDocument.TravelRequestId` | FK → TravelRequest |
+| NombreArchivo | `RequestDocument.FileName` | |
+| URLArchivo | `RequestDocument.BlobUrl` | Azure Blob Storage URL |
+| LogAuditoria | `AuditLogEntry` | |
+| LogID | `AuditLogEntry.Id` | PK |
+| SolicitudID | `AuditLogEntry.TravelRequestId` | FK → TravelRequest |
+| Acción | `AuditLogEntry.Action` | |
+| FechaHora | `AuditLogEntry.Timestamp` | |
+| Usuario | `AuditLogEntry.ActorId` | |
+
+**Why:** Concrete field names ensure all team members (Gandalf for EF Core model, Legolas for Razor Pages bindings, Pippin for test assertions) reference the same schema shape.
+
+### 2026-08-09T22:09:51-03:00: Decision
+**By:** Aragorn
+**What:** WI-10 (Audit Log) confirmed fully consistent with `LogAuditoria` table shape. No changes needed.
+**Why:** LogAuditoria has: LogID (PK), SolicitudID (FK), Acción, FechaHora, Usuario — maps exactly to our existing AuditLogEntry design (Id, TravelRequestId, Action, Timestamp, ActorId). The ER diagram validates our prior design.
+
+### 2026-08-09T22:09:51-03:00: Design Question (PENDING USER DECISION)
+**By:** Aragorn
+**What:** The ER diagram has BOTH `Empleados.SuperiorID` (the employee's direct manager in the org hierarchy) AND `SolicitudesViaje.AprobadorID` (the approver assigned to a specific request). These are separate fields pointing to different Employee records potentially.
+
+**Question for Jorgito:** For this PoC, should `TravelRequest.ApproverId` always default to the employee's direct manager (`Employee.SuperiorId`) at submission time, or is there a real scenario where a *different* approver can be assigned per-request?
+
+- **Option A (simple):** ApproverId is auto-populated from Employee.SuperiorId on submission. No UI to pick a different approver. The field exists for future flexibility but is always = SuperiorId for now. WI-1 seed data only needs the manager hierarchy.
+- **Option B (flexible):** There's a mechanism to assign a different approver (e.g., delegation during vacations, cross-department approvals). This requires additional UI/logic in WI-3 or a backend assignment rule.
+
+**Impact:** Option A keeps WI-1/WI-3 simple. Option B adds scope (approver selection or assignment logic).
+**Why:** Cannot finalize the submission flow (WI-3) or seed data shape (WI-1) without knowing intent.
+
+
+### From: coordinator-approver-decision.md
+
+### 2026-08-09T22:09:51-03:00: Decision
+**By:** Jorgito (via Coordinator)
+**What:** TravelRequest.ApproverId always defaults to the employee's direct manager (Employee.SuperiorId) at submission time. No per-request approver-picker UI is needed for the PoC.
+**Why:** User confirmed simplicity (Option A) is sufficient — no real scenario requiring a different approver was identified for this PoC scope.
+
 # End of merged inbox

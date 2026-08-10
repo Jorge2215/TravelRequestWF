@@ -7,16 +7,17 @@
 ### WI-1: Project Scaffolding & Data Model
 **Owner:** Gandalf  
 **Status:** Not Started  
-**⚠️ BLOCKED:** Auth approach PENDING USER DECISION — AAD vs local ASP.NET Identity (see `.squad/decisions/inbox/aragorn-architecture-reconciliation.md`).  
 **Hosting target:** Azure App Service (per architecture doc).  
 **Description:**  
 - Create .NET 10 Razor Pages solution with ASP.NET Identity (local accounts) **← subject to auth decision**.
-- Define EF Core data model:
-  - `TravelRequest` (ID, EmployeeId, Destination, StartDate, EndDate, Purpose, Status, ManagerId, CreatedAt, UpdatedAt)
-  - `RequestDocument` (ID, RequestId, FileName, BlobUrl, UploadedAt)
-  - `AuditLogEntry` (ID, RequestId, Action, ActorId, Timestamp, Notes) ← **NEW from functional spec §5**
-- Seed data: hardcoded Employee→Manager assignments (per decisions.md).
+- Define EF Core data model (from ER diagram — Spanish source names in parentheses):
+  - `Employee` (Empleados): Id, Name, Email, Department, SuperiorId (FK self-ref, nullable)
+  - `TravelRequest` (SolicitudesViaje): Id, EmployeeId (FK→Employee), ApproverId (FK→Employee, ⚠️ pending design question), Destination, StartDate, EndDate, Purpose, Status
+  - `RequestDocument` (DocumentosAdjuntos): Id, TravelRequestId (FK→TravelRequest), FileName, BlobUrl
+  - `AuditLogEntry` (LogAuditoria): Id, TravelRequestId (FK→TravelRequest), Action, Timestamp, ActorId
+- Seed data: hardcoded Employee→Manager hierarchy via Employee.SuperiorId (per decisions.md).
 - Status enum: Pending, Approved, Rejected, Returned.
+- ⚠️ PENDING: ApproverId always = SuperiorId on submit, or per-request assignment? (See design question in decisions inbox.)
 
 ### WI-2: Azure SQL Database Setup
 **Owner:** Gandalf  

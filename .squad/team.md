@@ -31,6 +31,8 @@
 - **Architecture Doc Ingested:** 2026-08-09
 - **Backlog Proposal:** `.squad/backlog-proposal.md` (Epics & User Stories, PoC)
 - **Backlog Proposal Ingested:** 2026-08-09
+- **ER Diagram:** `.squad/er-diagram.md` + `.squad/files/er-diagram.png` (Entity-Relationship Diagram, PoC)
+- **ER Diagram Ingested:** 2026-08-09
 
 ## Project Context
 
