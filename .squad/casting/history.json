@@ -1,0 +1,10 @@
+{
+  "universe_usage_history": ["The Lord of the Rings"],
+  "assignment_cast_snapshots": {
+    "2026-08-09": {
+      "universe": "The Lord of the Rings",
+      "assignment_id": "trwf-init-2026-08-09",
+      "members": ["Aragorn", "Legolas", "Gandalf", "Merry", "Sam", "Pippin"]
+    }
+  }
+}

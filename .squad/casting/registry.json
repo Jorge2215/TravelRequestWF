@@ -1,0 +1,46 @@
+{
+  "agents": {
+    "aragorn": {
+      "persistent_name": "Aragorn",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "legolas": {
+      "persistent_name": "Legolas",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "gandalf": {
+      "persistent_name": "Gandalf",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "merry": {
+      "persistent_name": "Merry",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "sam": {
+      "persistent_name": "Sam",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "pippin": {
+      "persistent_name": "Pippin",
+      "universe": "The Lord of the Rings",
+      "created_at": "2026-08-09",
+      "legacy_named": false,
+      "status": "active"
+    }
+  }
+}
