@@ -36,3 +36,6 @@ This prompt is for **context and planning only** — do not start coding yet.
 - Documents are uploaded and linked to requests.
 - Managers receive daily pending reports.
 - Architecture remains modular and ready for future SAP/Ariba integration.
+
+## Resume SQUAD Session
+copilot --resume=5cefc55d-f9ec-476f-ac7e-cf1fc6ab6b9a

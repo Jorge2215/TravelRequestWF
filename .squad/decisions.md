@@ -7,6 +7,11 @@
 **What:** Connected TravelRequestWF to GitHub repo Jorge2215/TravelRequestWF for issue tracking.
 **Why:** User confirmed the remote repository for the project.
 
+### 2026-08-10T22:03:59.308-03:00: Milestone
+**By:** Jorgito
+**What:** Azure SQL Database provisioned and `InitialCreate` EF Core migration applied successfully against it. Stage 1 success criteria (schema created and accessible in Azure SQL) is now fully met.
+**Why:** Closes the last open item from Stage 1 (Azure SQL was previously deferred pending credentials).
+
 ### 2026-08-10T21:07:40.356-03:00: User directive
 **By:** Jorgito (via Copilot)
 **What:** Local branch renamed to `dev`; remote `origin/dev` created and tracked. All team work commits push to `dev`. Remote `main` is reserved exclusively for GitHub Actions deployment to Azure — never push work commits directly to `main`.
