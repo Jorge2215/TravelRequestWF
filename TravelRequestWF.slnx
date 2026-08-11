@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TravelRequestWF.Infrastructure/TravelRequestWF.Infrastructure.csproj" />
+    <Project Path="src/TravelRequestWF.Web/TravelRequestWF.Web.csproj" />
+  </Folder>
+</Solution>

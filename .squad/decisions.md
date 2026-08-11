@@ -7,6 +7,11 @@
 **What:** Connected TravelRequestWF to GitHub repo Jorge2215/TravelRequestWF for issue tracking.
 **Why:** User confirmed the remote repository for the project.
 
+### 2026-08-10T21:07:40.356-03:00: User directive
+**By:** Jorgito (via Copilot)
+**What:** Local branch renamed to `dev`; remote `origin/dev` created and tracked. All team work commits push to `dev`. Remote `main` is reserved exclusively for GitHub Actions deployment to Azure — never push work commits directly to `main`.
+**Why:** User request — keep deploy pipeline isolated from active development.
+
 ## Governance
 
 - All meaningful changes require team consensus
