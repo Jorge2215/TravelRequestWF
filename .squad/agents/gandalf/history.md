@@ -52,3 +52,16 @@
 - **Root .gitignore** now has a comprehensive `.NET / Visual Studio` section covering `bin/`, `obj/`, `.vs/`, `*.dll`, `*.pdb`, `*.exe`, `*.cache`, `*.user`, NuGet, test results, and Rider/JetBrains dirs. Adding it after the fact only stops future tracking — `git rm --cached` must be run separately to untrack already-indexed files.
 - **Commit `95d16d4`** on `dev`: 356 files changed — 352 build artifacts removed from index + 4 legitimate file updates. Working tree clean after push.
 
+### 2026-08-11T23:10:00-03:00 — Stage 3: ASP.NET Identity Integration
+
+- **NuGet packages added:** `Microsoft.AspNetCore.Identity.EntityFrameworkCore 10.0.10` → Infrastructure project; `Microsoft.AspNetCore.Identity.UI 10.0.10` → Web project.
+- **ApplicationUser:** Created at `src/TravelRequestWF.Infrastructure/Identity/ApplicationUser.cs`. Inherits `IdentityUser`. Adds `int? EmployeeId` + `Employee? Employee` navigation property. Namespace: `TravelRequestWF.Infrastructure.Identity`.
+- **AppDbContext:** Changed base class from `DbContext` to `IdentityDbContext<ApplicationUser, IdentityRole, string>`. Added FK config for ApplicationUser → Employee (`DeleteBehavior.SetNull`, optional). `base.OnModelCreating(builder)` called first (required by Identity).
+- **Program.cs:** Added `AddIdentity<ApplicationUser, IdentityRole>` with password policy (RequireDigit, RequiredLength=8, RequireUppercase, RequireNonAlphanumeric), `AddEntityFrameworkStores<AppDbContext>`, `AddDefaultTokenProviders`. Added `ConfigureApplicationCookie` (LoginPath=/Account/Login, 8h expiry). Added `UseAuthentication()` before `UseAuthorization()` in pipeline. Added startup seeder call.
+- **IdentitySeeder:** Created at `src/TravelRequestWF.Web/IdentitySeeder.cs`. Namespace: `TravelRequestWF.Web`. Seeds roles `Employee` and `Manager`. Seeds 4 test users (see credentials below), creating Employee records linked via EmployeeId. Idempotent: checks for existing user before creating. Managers seeded before employees so employees can reference manager1's EmployeeId as SuperiorId.
+- **Migration:** `AddIdentityTables` applied to LocalDB (`TravelRequestWFDb_Dev`). Creates: `AspNetUsers` (with `EmployeeId` FK), `AspNetRoles`, `AspNetUserRoles`, `AspNetUserClaims`, `AspNetUserLogins`, `AspNetUserTokens`, `AspNetRoleClaims`.
+- **Azure SQL deploy command documented** in `.squad/files/stage3-azure-sql-deploy-note.md`.
+- **Build:** `dotnet build TravelRequestWF.slnx` — 0 errors, 0 warnings.
+- **Test credentials:** employee1@test.com/Employee1!Pass (Employee), employee2@test.com/Employee2!Pass (Employee), manager1@test.com/Manager1!Pass (Manager), manager2@test.com/Manager2!Pass (Manager).
+- **Important for Legolas:** ApplicationUser is in namespace `TravelRequestWF.Infrastructure.Identity`. The cookie LoginPath is `/Account/Login` — Legolas needs to create that page (or update it). `AddIdentity` also auto-registers `UseAuthentication` services but the middleware must be ordered: `UseAuthentication()` → `UseAuthorization()` → `MapRazorPages()` (already done).
+
