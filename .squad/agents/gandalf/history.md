@@ -65,3 +65,58 @@
 - **Test credentials:** employee1@test.com/Employee1!Pass (Employee), employee2@test.com/Employee2!Pass (Employee), manager1@test.com/Manager1!Pass (Manager), manager2@test.com/Manager2!Pass (Manager).
 - **Important for Legolas:** ApplicationUser is in namespace `TravelRequestWF.Infrastructure.Identity`. The cookie LoginPath is `/Account/Login` — Legolas needs to create that page (or update it). `AddIdentity` also auto-registers `UseAuthentication` services but the middleware must be ordered: `UseAuthentication()` → `UseAuthorization()` → `MapRazorPages()` (already done).
 
+### 2026-08-12T20:03:51-03:00 — Stage 4: Workflow Backend Services & PageModels
+
+- **New NuGet:** `Azure.Storage.Blobs 12.29.1` added to `TravelRequestWF.Infrastructure.csproj`.
+- **New services (all in `src/TravelRequestWF.Infrastructure/Services/`):**
+  - `AzureStorageOptions` — POCO with `ConnectionString` and `ContainerName`; registered via `IOptions<>`.
+  - `IBlobStorageService` / `BlobStorageService` — uploads to Azure Blob Storage, returns blob URI. Throws `InvalidOperationException` with clear message if connection string is still the placeholder.
+  - `SubmitRequestDto` — record type for submit payload (Destination, StartDate, EndDate, Purpose, Documents).
+  - `ITravelRequestService` / `TravelRequestService` — full workflow: Submit, Approve, Reject, Return, Resubmit, GetForEmployee, GetForManager, GetById.
+- **Entity changes & migration (`Stage4WorkflowFields`):**
+  - `TravelRequest.SubmittedAt` (`DateTime`, UTC) — added.
+  - `AuditLogEntry.Details` (`string?`, nullable) — added.
+  - Migration file: `20260812231909_Stage4WorkflowFields.cs`.
+  - **Jorgito must apply to Azure SQL:** `dotnet ef database update --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web --connection "<AzureSQLConnectionString>"`
+- **DI in Program.cs:** `Configure<AzureStorageOptions>`, `AddScoped<IBlobStorageService, BlobStorageService>`, `AddScoped<ITravelRequestService, TravelRequestService>`.
+- **AzureStorage config:** Added to both `appsettings.json` and `appsettings.Development.json`. Jorgito must replace `"YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE"` with the real Azure Storage account connection string. Container name defaults to `"travel-documents"`.
+- **Razor fix:** Legolas's stubs in `Detail.cshtml` and `Review.cshtml` had `@{...}` code blocks nested inside `else { }` blocks (Razor parser bug RZ1010). Fixed by inlining the LINQ query directly into the `@if`/`@foreach` expressions — no intermediate variable needed.
+- **CS0108 `new` keyword:** `DetailModel.Request` and `ReviewModel.Request` shadow `PageModel.Request` — added `new` keyword to suppress warning and make intent explicit.
+- **Build:** 0 errors, 0 warnings.
+- **Commit:** `b4d725d` on `dev`, pushed to `origin/dev`.
+
+#### Exact PageModel Properties/Handlers Legolas Must Bind To
+
+**Employee/Submit.cshtml** (`SubmitModel`):
+- `[BindProperty] string Destination`
+- `[BindProperty] DateOnly StartDate`
+- `[BindProperty] DateOnly EndDate`
+- `[BindProperty] string Purpose`
+- `[BindProperty] List<IFormFile> Documents`
+- `string? ErrorMessage` (read-only, display only)
+- `string? SuccessMessage` (read-only, display only)
+- Handler: `OnPostAsync` → `asp-page-handler` not required (default POST)
+
+**Employee/Index.cshtml** (`IndexModel`):
+- `IReadOnlyList<TravelRequest> Requests` (read-only, iterate in table)
+- Handler: `OnGetAsync` (no POST)
+
+**Employee/Detail.cshtml** (`DetailModel`):
+- `new TravelRequest? Request` (read-only)
+- `bool CanResubmit` (read-only, show/hide resubmit button)
+- `string? ErrorMessage` (read-only)
+- Handler: `OnPostResubmitAsync(int id)` → `asp-page-handler="Resubmit"` + `asp-route-id="@Model.Request.Id"`
+
+**Manager/Index.cshtml** (`IndexModel`):
+- `IReadOnlyList<TravelRequest> Requests` (read-only, iterate in table)
+- Handler: `OnGetAsync` (no POST)
+
+**Manager/Review.cshtml** (`ReviewModel`):
+- `new TravelRequest? Request` (read-only)
+- `[BindProperty] string? Comments`
+- `string? ErrorMessage` (read-only)
+- Handler: `OnPostApproveAsync(int id)` → `asp-page-handler="Approve"` + `asp-route-id`
+- Handler: `OnPostRejectAsync(int id)` → `asp-page-handler="Reject"` + `asp-route-id`
+- Handler: `OnPostReturnAsync(int id)` → `asp-page-handler="Return"` + `asp-route-id`
+
+
