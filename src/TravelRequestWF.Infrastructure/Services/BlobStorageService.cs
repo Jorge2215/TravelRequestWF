@@ -11,16 +11,17 @@ public class BlobStorageService : IBlobStorageService
     public BlobStorageService(IOptions<AzureStorageOptions> options)
     {
         _options = options.Value;
+    }
+
+    public async Task<string> UploadDocumentAsync(Stream fileStream, string fileName, string contentType, CancellationToken ct = default)
+    {
         if (_options.ConnectionString == "YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE" ||
             string.IsNullOrWhiteSpace(_options.ConnectionString))
         {
             throw new InvalidOperationException(
                 "Azure Storage connection string is not configured. Set AzureStorage:ConnectionString in appsettings.json.");
         }
-    }
 
-    public async Task<string> UploadDocumentAsync(Stream fileStream, string fileName, string contentType, CancellationToken ct = default)
-    {
         var serviceClient = new BlobServiceClient(_options.ConnectionString);
         var containerClient = serviceClient.GetBlobContainerClient(_options.ContainerName);
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: ct);
