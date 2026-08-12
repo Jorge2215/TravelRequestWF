@@ -76,3 +76,23 @@
 
 **Files produced:**
 - `.squad/files/stage3-auth-test-results.md` — full 14-TC results table
+
+### 2026-08-12T20:03:51-03:00 — Stage 4 Workflow Validation Attempt
+
+**What I validated:**
+- `git pull origin dev` — already up to date (Gandalf + Legolas both merged).
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- App started at `http://localhost:5200` (port 5200). PID 10820 (child of dotnet run PID 8164).
+- Login worked correctly for employee1 after discovering field names are `Input.Email` / `Input.Password` (same as Stage 3 pattern — remember this!).
+- **Critical bug found IMMEDIATELY on first authenticated page access:** `BlobStorageService` constructor throws `InvalidOperationException` when connection string is placeholder. Registered as Scoped → throws on every request to every workflow page. All 13 workflow TCs blocked.
+
+**Key learning — BlobStorageService registration pattern:**  
+If a service validates configuration in its constructor AND is registered as Scoped, it will fail every request scope that resolves it — not just the requests that actually USE the configured resource. Configuration-validation guards must be in the method that actually uses the resource, not in the constructor, unless the service is registered as Singleton AND you want to fail-fast at startup.
+
+**Files produced:**
+- `.squad/files/stage4-workflow-test-results.md` — test case table (1 pass, 13 blocked, 1 deferred)
+- `.squad/decisions/inbox/pippin-blobstorage-constructor-blocks-workflow.md` — bug report for Gandalf
+
+**Gaps/bugs found:**
+- **CRITICAL:** `BlobStorageService` constructor validation blocks ALL workflow pages. Fix: move validation to `UploadDocumentAsync`. Routed to decisions inbox.
+- TC14 (file upload with Azure Blob) remains DEFERRED pending real connection string from Jorgito — this was expected.
