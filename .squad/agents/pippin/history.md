@@ -29,3 +29,23 @@
 **Gaps found:**
 - EF Tools version mismatch (10.0.8 tools vs 10.0.10 runtime). Functional but advisory. Worth a Gandalf fix to keep tools in sync.
 - No automated tests exist yet (no test project in solution). Stage 1 scope didn't include tests, but this is the baseline I need to build from.
+
+### 2026-08-11T22:43:57-03:00 — Stage 2 ERD-vs-Schema Validation
+
+**What I validated:**
+- `git pull origin dev` — already up to date (Gandalf's `AuditLogDocumentLink` migration was already present).
+- `dotnet ef migrations list` (with live Azure SQL connection): both `20260811002601_InitialCreate` and `20260812013905_AuditLogDocumentLink` listed and applied. No pending migrations.
+- Read all 4 entity files and `AppDbContext.cs` against the ERD in `.squad/er-diagram.md`.
+- All 4 tables present, all ERD columns correctly mapped.
+- `AuditLogEntry.TravelRequestId` confirmed nullable; `AuditLogEntry.RequestDocumentId` confirmed added with Restrict FK — Gandalf's migration is correct.
+- 5 of 6 FK relationships explicitly configured in `OnModelCreating` with correct `DeleteBehavior`.
+
+**Gaps found:**
+- **RequestDocument.TravelRequestId FK delete behavior is NOT explicitly configured.** EF Core defaults to Cascade for required FKs, so deleting a `TravelRequest` will cascade-delete its `RequestDocument` rows. This may be intentional but is undeclared. Routed to Gandalf via decisions inbox.
+- `TravelRequest.ApproverId` is non-nullable in the entity (int, not int?), consistent with the decision that ApproverId is always populated from SuperiorId at submission. Not a discrepancy — just documented.
+- `DateOnly` used for StartDate/EndDate (not `DateTime`) — correct for DATE columns in Azure SQL.
+- `AuditLogEntry.ActorId` is `string` (not `int`) — ERD shows `Usuario` as VARCHAR, so this is a correct and intentional design choice.
+
+**Files produced:**
+- `.squad/files/stage2-erd-vs-schema.md` — full comparison table with all 4 sections
+- `.squad/decisions/inbox/pippin-stage2-validation.md` — gap report for Gandalf
