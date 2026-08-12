@@ -35,6 +35,19 @@
 
 
 
+### 2026-08-11T22:46:34-03:00 — Stage 2 Gap Fix: RequestDocument Restrict Delete (RequestDocumentRestrictDelete migration)
+
+- **Gap:** `RequestDocument.TravelRequestId` FK had no explicit `OnModelCreating` config → EF Core defaulted to `Cascade`. Inconsistent with every other FK in the schema (all Restrict). Deleting a TravelRequest would silently cascade-delete all its RequestDocuments.
+- **Fix in AppDbContext:** Added `HasOne(d => d.TravelRequest).WithMany(t => t.Documents).HasForeignKey(d => d.TravelRequestId).OnDelete(DeleteBehavior.Restrict)` block. Placed it adjacent to the AuditLogEntry configs for consistency.
+- **Migration:** `RequestDocumentRestrictDelete` (file: `20260812014713_RequestDocumentRestrictDelete.cs`). SQL: drops the old FK and recreates it `ON DELETE NO ACTION` (SQL Server equivalent of Restrict).
+- **Migration applied to:** LocalDB (`TravelRequestWFDb_Dev`). No Azure SQL connection string found locally (no user-secrets, env var, or appsettings.Development.json Azure entry).
+- **Azure SQL apply command (Jorgito must run):**
+  ```
+  dotnet ef database update --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web --connection "<AzureSQLConnectionString>"
+  ```
+- **Build:** `dotnet build TravelRequestWF.slnx` — succeeded 0 errors, 0 warnings.
+- **Commit:** `6594067` on `dev`, pushed to `origin/dev`.
+
 - **bin/ and obj/ were accidentally committed early in the project.** `git rm -r --cached` is the correct fix: removes them from the index without touching disk. 352 files were untracked this way.
 - **Root .gitignore** now has a comprehensive `.NET / Visual Studio` section covering `bin/`, `obj/`, `.vs/`, `*.dll`, `*.pdb`, `*.exe`, `*.cache`, `*.user`, NuGet, test results, and Rider/JetBrains dirs. Adding it after the fact only stops future tracking — `git rm --cached` must be run separately to untrack already-indexed files.
 - **Commit `95d16d4`** on `dev`: 356 files changed — 352 build artifacts removed from index + 4 legitimate file updates. Working tree clean after push.
