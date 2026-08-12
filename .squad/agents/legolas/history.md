@@ -26,3 +26,10 @@
 - `_ViewImports.cshtml` needed `@using TravelRequestWF.Infrastructure.Entities` added so all pages can use `TravelRequestStatus` enum and entity types without per-page `@using` directives.
 - WIP commit + push done. Coordinator should re-invoke Legolas once Gandalf's PageModel properties land to run the final combined build verification.
 
+### 2026-08-12 — Stage 4 final build pass
+
+- Combined build (`dotnet build TravelRequestWF.slnx`) passed: **0 errors, 0 warnings** once Gandalf's PageModel properties were present.
+- Gandalf's RZ1010 fix: Razor disallows `@{ var x = ...; }` code blocks nested inside an `else {}` branch that is itself inside an outer `@if/else`. Fix is to inline the LINQ expression directly inside the `@if` and `@foreach` — no intermediate variable needed.
+- `AuditLogEntry` gained a nullable `Details` field in Stage 4 — added a "Details" column to both audit trail tables (Detail.cshtml and Review.cshtml). Always re-check entity shapes after Gandalf's migrations land.
+- Final commit: `cf7f842` pushed to `dev`. Stage 4 UI complete.
+
