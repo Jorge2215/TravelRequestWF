@@ -4,5 +4,139 @@
     ViewData["Title"] = "Review Request";
 }
 
-<h1>Review Travel Request</h1>
-<p>Approve, reject, or return for revision — coming soon.</p>
+<h2>Review Travel Request</h2>
+<a asp-page="/Manager/Index" class="btn btn-secondary mb-3">← Back to Requests</a>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+}
+
+@if (Model.Request == null)
+{
+    <div class="alert alert-warning" role="alert">Request not found.</div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">@Model.Request.Destination</h5>
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Employee</dt>
+                <dd class="col-sm-9">@(Model.Request.Employee?.Name ?? "—")</dd>
+
+                <dt class="col-sm-3">Start Date</dt>
+                <dd class="col-sm-9">@Model.Request.StartDate.ToString("yyyy-MM-dd")</dd>
+
+                <dt class="col-sm-3">End Date</dt>
+                <dd class="col-sm-9">@Model.Request.EndDate.ToString("yyyy-MM-dd")</dd>
+
+                <dt class="col-sm-3">Purpose</dt>
+                <dd class="col-sm-9">@Model.Request.Purpose</dd>
+
+                <dt class="col-sm-3">Status</dt>
+                <dd class="col-sm-9">
+                    @switch (Model.Request.Status)
+                    {
+                        case TravelRequestStatus.Pending:
+                            <span class="badge bg-warning text-dark">Pending</span>
+                            break;
+                        case TravelRequestStatus.Approved:
+                            <span class="badge bg-success">Approved</span>
+                            break;
+                        case TravelRequestStatus.Rejected:
+                            <span class="badge bg-danger">Rejected</span>
+                            break;
+                        case TravelRequestStatus.Returned:
+                            <span class="badge bg-secondary">Returned</span>
+                            break;
+                    }
+                </dd>
+
+                <dt class="col-sm-3">Submitted</dt>
+                <dd class="col-sm-9">@Model.Request.SubmittedAt.ToString("yyyy-MM-dd HH:mm")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <h4>Documents</h4>
+    @if (!Model.Request.Documents.Any())
+    {
+        <p class="text-muted">No documents attached.</p>
+    }
+    else
+    {
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>File Name</th>
+                    <th>Download</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var doc in Model.Request.Documents)
+                {
+                    <tr>
+                        <td>@doc.FileName</td>
+                        <td><a href="@doc.BlobUrl" target="_blank" class="btn btn-sm btn-outline-secondary">Download</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h4 class="mt-4">Audit Trail</h4>
+    @{
+        var auditEntries = Model.Request.AuditLog
+            .Where(e => e.TravelRequestId.HasValue)
+            .OrderBy(e => e.Timestamp)
+            .ToList();
+    }
+    @if (!auditEntries.Any())
+    {
+        <p class="text-muted">No audit entries yet.</p>
+    }
+    else
+    {
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in auditEntries)
+                {
+                    <tr>
+                        <td>@entry.Action</td>
+                        <td>@entry.ActorId</td>
+                        <td>@entry.Timestamp.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (Model.Request.Status == TravelRequestStatus.Pending)
+    {
+        <div class="card border-primary mt-4">
+            <div class="card-header"><h4 class="mb-0">Decision</h4></div>
+            <div class="card-body">
+                <form method="post" asp-route-id="@Model.Request.Id">
+                    <div class="mb-3">
+                        <label asp-for="Comments" class="form-label">Comments (optional)</label>
+                        <textarea asp-for="Comments" class="form-control" rows="3"
+                                  placeholder="Add comments for the employee..."></textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" asp-page-handler="Approve" class="btn btn-success">✓ Approve</button>
+                        <button type="submit" asp-page-handler="Reject" class="btn btn-danger">✗ Reject</button>
+                        <button type="submit" asp-page-handler="Return" class="btn btn-warning">↩ Return for More Info</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+}
