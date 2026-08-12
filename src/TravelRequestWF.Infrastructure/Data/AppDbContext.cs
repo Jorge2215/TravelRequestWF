@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TravelRequestWF.Infrastructure.Entities;
+using TravelRequestWF.Infrastructure.Identity;
 
 namespace TravelRequestWF.Infrastructure.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole, string>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -15,6 +18,14 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // ApplicationUser → Employee FK
+        modelBuilder.Entity<ApplicationUser>()
+            .HasOne(u => u.Employee)
+            .WithMany()
+            .HasForeignKey(u => u.EmployeeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Employee self-reference: Superior → Subordinates
         modelBuilder.Entity<Employee>()

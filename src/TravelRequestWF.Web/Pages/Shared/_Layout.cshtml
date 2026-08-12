@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="~/TravelRequestWF.Web.styles.css" asp-append-version="true" />
 </head>
 <body>
+    @inject Microsoft.AspNetCore.Identity.SignInManager<TravelRequestWF.Infrastructure.Identity.ApplicationUser> SignInManager
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container">
@@ -23,23 +24,49 @@
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
                         </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link text-dark dropdown-toggle" href="#" data-bs-toggle="dropdown">Employee</a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" asp-page="/Employee/Index">My Requests</a></li>
-                                <li><a class="dropdown-item" asp-page="/Employee/Submit">Submit Request</a></li>
-                            </ul>
-                        </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link text-dark dropdown-toggle" href="#" data-bs-toggle="dropdown">Manager</a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" asp-page="/Manager/Index">Pending Approvals</a></li>
-                            </ul>
-                        </li>
+                        @if (User.IsInRole("Employee"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-page="/Employee/Index">My Requests</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-page="/Employee/Submit">Submit Request</a>
+                            </li>
+                        }
+                        @if (User.IsInRole("Manager"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-page="/Manager/Index">Review Requests</a>
+                            </li>
+                        }
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-page="/Privacy">Privacy</a>
                         </li>
                     </ul>
+                    <div class="d-flex align-items-center">
+                        @if (SignInManager.IsSignedIn(User))
+                        {
+                            <span class="navbar-text me-2">
+                                Hello, @User.Identity!.Name
+                                @if (User.IsInRole("Manager"))
+                                {
+                                    <span class="badge bg-primary ms-1">Manager</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary ms-1">Employee</span>
+                                }
+                            </span>
+                            <form method="post" asp-page="/Account/Logout" class="d-inline">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <a class="btn btn-outline-primary btn-sm me-1" asp-page="/Account/Login">Login</a>
+                            <a class="btn btn-outline-secondary btn-sm" asp-page="/Account/Register">Register</a>
+                        }
+                    </div>
                 </div>
             </div>
         </nav>
