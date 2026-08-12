@@ -49,3 +49,30 @@
 **Files produced:**
 - `.squad/files/stage2-erd-vs-schema.md` — full comparison table with all 4 sections
 - `.squad/decisions/inbox/pippin-stage2-validation.md` — gap report for Gandalf
+
+### 2026-08-11T23:23:00-03:00 — Stage 3 Auth & Role-Based Access Validation
+
+**What I validated:**
+- Build: `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings** on commit `f9f5541`.
+- App started: `dotnet run --project src/TravelRequestWF.Web` on HTTP port 5199, PID 16068.
+- Executed all 14 test cases via PowerShell `Invoke-WebRequest` with cookie-session containers.
+- **All 14 TCs passed.** No bugs found.
+
+**Key observations:**
+- Unauthenticated access to both `/Employee/Index` and `/Manager/Index` correctly redirects to `/Account/Login?ReturnUrl=...` (TC-01, TC-02).
+- Login flow works for all 4 seeded users (employee1, employee2, manager1, manager2) — (TC-03, TC-07, TC-13, TC-14).
+- Employee role is correctly blocked from Manager pages → AccessDenied (TC-06).
+- Manager role is correctly blocked from Employee pages → AccessDenied (TC-09).
+- Logout properly clears session; CSRF protection on POST is correct security behavior (TC-10).
+- New registration defaults to Employee role (TC-11).
+- ReturnUrl preserved after login (TC-12).
+- Nav shows `"Hello, <email>"` + role badge (`<span class="badge bg-secondary ms-1">Employee</span>`) — Legolas's UI work confirmed.
+
+**Routing note:**
+- `/Manager/Review` has a route constraint `{id:int}` — must be accessed as `/Manager/Review/1` etc. `/Manager/Review` alone returns 404. This is correct and expected; not a bug.
+
+**Logout note:**
+- Logout POST without CSRF token → 400 (correct antiforgery protection). Logout form in nav correctly includes CSRF token, so normal UI logout works fine.
+
+**Files produced:**
+- `.squad/files/stage3-auth-test-results.md` — full 14-TC results table
