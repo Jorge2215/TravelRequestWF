@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TravelRequestWF.Infrastructure.Data;
 using TravelRequestWF.Infrastructure.Identity;
+using TravelRequestWF.Infrastructure.Services;
 using TravelRequestWF.Web;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,6 +34,14 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
+
+// AzureStorage options
+builder.Services.Configure<AzureStorageOptions>(
+    builder.Configuration.GetSection("AzureStorage"));
+
+// Application services
+builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
+builder.Services.AddScoped<ITravelRequestService, TravelRequestService>();
 
 var app = builder.Build();
 

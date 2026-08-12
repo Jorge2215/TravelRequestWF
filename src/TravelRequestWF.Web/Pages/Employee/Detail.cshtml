@@ -86,13 +86,7 @@ else
     }
 
     <h4 class="mt-4">Audit Trail</h4>
-    @{
-        var auditEntries = Model.Request.AuditLog
-            .Where(e => e.TravelRequestId.HasValue)
-            .OrderBy(e => e.Timestamp)
-            .ToList();
-    }
-    @if (!auditEntries.Any())
+    @if (!Model.Request.AuditLog.Where(e => e.TravelRequestId.HasValue).Any())
     {
         <p class="text-muted">No audit entries yet.</p>
     }
@@ -107,7 +101,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var entry in auditEntries)
+                @foreach (var entry in Model.Request.AuditLog.Where(e => e.TravelRequestId.HasValue).OrderBy(e => e.Timestamp))
                 {
                     <tr>
                         <td>@entry.Action</td>

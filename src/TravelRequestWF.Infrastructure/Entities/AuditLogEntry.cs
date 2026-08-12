@@ -10,6 +10,7 @@ public class AuditLogEntry
     public int? RequestDocumentId { get; set; }
     public RequestDocument? RequestDocument { get; set; }
     public string Action { get; set; } = string.Empty;
+    public string? Details { get; set; }
     public DateTime Timestamp { get; set; }
     public string ActorId { get; set; } = string.Empty;
 }
