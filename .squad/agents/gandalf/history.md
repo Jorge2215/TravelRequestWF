@@ -85,6 +85,14 @@
 - **Build:** 0 errors, 0 warnings.
 - **Commit:** `b4d725d` on `dev`, pushed to `origin/dev`.
 
+### 2026-08-12T20:45:50-03:00 — Stage 4 Hotfix: BlobStorageService Constructor Guard (Pippin's Bug Report)
+
+- **Root cause:** `BlobStorageService` constructor threw `InvalidOperationException` when the Azure Storage connection string was still the placeholder value. Because it was registered as Scoped DI, it was instantiated on every HTTP request that resolved `ITravelRequestService`, which is injected into every workflow PageModel. Result: HTTP 500 on ALL workflow pages even for non-upload operations (Index, Detail, Approve, Reject, Return, Resubmit).
+- **Fix:** Moved the placeholder/empty connection-string guard from the constructor into `UploadDocumentAsync`. The constructor now only stores the options; the validation fires only when an actual blob upload is attempted.
+- **Lesson (DI/Constructor Design):** Never do environment/resource validation in a constructor of a Scoped or Transient DI service unless that resource is truly required for every operation the service performs. Constructors in DI containers are called eagerly on every resolution — guard checks belong in the specific methods that actually need the resource. This is the "fail at use, not at construction" principle. For services that are optionally configured (e.g., Azure Storage only needed for file upload), constructor guards are actively harmful because they break all consumers, not just the ones that trigger the unconfigured path.
+- **Build:** 0 errors, 0 warnings.
+- **Commit:** `311c24f` on `dev`, pushed to `origin/dev`.
+
 #### Exact PageModel Properties/Handlers Legolas Must Bind To
 
 **Employee/Submit.cshtml** (`SubmitModel`):
