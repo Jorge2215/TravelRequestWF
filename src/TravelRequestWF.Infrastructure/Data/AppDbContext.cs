@@ -37,6 +37,13 @@ public class AppDbContext : DbContext
             .HasForeignKey(t => t.ApproverId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // RequestDocument → TravelRequest
+        modelBuilder.Entity<RequestDocument>()
+            .HasOne(d => d.TravelRequest)
+            .WithMany(t => t.Documents)
+            .HasForeignKey(d => d.TravelRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // AuditLogEntry → TravelRequest (optional)
         modelBuilder.Entity<AuditLogEntry>()
             .HasOne(a => a.TravelRequest)
