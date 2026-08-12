@@ -19,7 +19,21 @@
 - **Pages stub locations:** `Pages/Employee/{Index,Submit,Detail}` and `Pages/Manager/{Index,Review}` — all stub OnGet, no logic yet (Legolas owns markup).
 - **Connection strings:** Placeholder in `appsettings.json`; LocalDB override in `appsettings.Development.json`; Azure SQL deploy command documented in `docs/database-setup.md`.
 
-### 2026-08-10T22:07:00-03:00 — Gitignore / Build Artifact Cleanup
+### 2026-08-11T22:45:00-03:00 — Stage 2 AuditLogEntry Fix (AuditLogDocumentLink migration)
+
+- **Entity change:** `AuditLogEntry.TravelRequestId` changed from `int` (non-nullable) to `int?` (nullable). Added `int? RequestDocumentId` FK and corresponding `RequestDocument? RequestDocument` navigation property. Added invariant comment: exactly one FK must be set; enforced at service layer, not DB level.
+- **AppDbContext change:** Added explicit Fluent config for both AuditLogEntry relationships with `IsRequired(false)` + `DeleteBehavior.Restrict`. Used `WithMany(t => t.AuditLog)` to wire the existing nav collection on TravelRequest — omitting this caused EF to generate a spurious shadow `TravelRequestId1` column on the first migration attempt. Removed the bad migration and regenerated cleanly.
+- **Migration:** `AuditLogDocumentLink` (file: `20260812013905_AuditLogDocumentLink.cs`). Changes: `TravelRequestId` altered to nullable `int`, new nullable `RequestDocumentId` column, FK → `RequestDocuments` (Restrict), FK → `TravelRequests` updated to Restrict (was Cascade).
+- **Migration applied to:** LocalDB (`TravelRequestWFDb_Dev` via `Server=(localdb)\mssqllocaldb`) — this is the only available connection string locally (`appsettings.Development.json`). Azure SQL credentials are not present in the local environment.
+- **Azure SQL apply command (Jorgito must run):**
+  ```
+  dotnet ef database update --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web --connection "<AzureSQLConnectionString>"
+  ```
+  Replace `<AzureSQLConnectionString>` with the real Azure SQL connection string (same one used for `InitialCreate` in Stage 1).
+- **Build:** `dotnet build TravelRequestWF.slnx` — succeeded with 0 errors, 0 warnings.
+- **Commit:** `3029740` on `dev`, pushed to `origin/dev`.
+
+
 
 - **bin/ and obj/ were accidentally committed early in the project.** `git rm -r --cached` is the correct fix: removes them from the index without touching disk. 352 files were untracked this way.
 - **Root .gitignore** now has a comprehensive `.NET / Visual Studio` section covering `bin/`, `obj/`, `.vs/`, `*.dll`, `*.pdb`, `*.exe`, `*.cache`, `*.user`, NuGet, test results, and Rider/JetBrains dirs. Adding it after the fact only stops future tracking — `git rm --cached` must be run separately to untrack already-indexed files.
