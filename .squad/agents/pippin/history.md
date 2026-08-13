@@ -119,3 +119,36 @@ If a service validates configuration in its constructor AND is registered as Sco
 
 **Gaps/bugs found:**
 - **CRITICAL (Attempt #2):** `Stage4WorkflowFields` migration pending on Azure SQL — `SubmittedAt` column missing. Fix: `dotnet ef database update`. Routed to decisions inbox.
+
+### 2026-08-13T00:45:00-03:00 — Stage 4 Workflow Validation Re-Run (Attempt #3) — FULL PASS
+
+**What I validated:**
+- `git pull origin dev` — already up to date. Gandalf confirmed migration applied to LocalDB.
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- App started via `dotnet run --project src/TravelRequestWF.Web` at `http://localhost:5199`, PID 14076.
+- All 15 test cases executed and passed. No blockers.
+
+**TC summary:**
+- TC1 (build) ✅ — TC2 (Employee/Index) ✅ — TC3 (submit no file, Pending, ApproverId=manager1) ✅
+- TC4 (Index shows badge) ✅ — TC5 (Detail, no Resubmit) ✅
+- TC6 (Employee2 forbidden from employee1's Detail) ✅ — redirected to /Account/AccessDenied
+- TC7 (Manager1/Index shows request) ✅ — TC8 (Manager2 forbidden from Review) ✅ — redirected to /Account/AccessDenied
+- TC9 (Approve w/ comment, audit) ✅ — TC10 (Reject w/ comment, audit) ✅
+- TC11 (Return w/ comment, Resubmit button appears) ✅ — TC12 (Resubmit → Pending, audit) ✅
+- TC13 (file upload → graceful error, no 500) ✅ — TC14 (audit order Submitted→Returned→Resubmitted) ✅
+- TC15 (kill process by PID 14076) ✅
+
+**Key learnings — Attempt #3:**
+1. **Login URL is /Account/Login**, NOT /Identity/Account/Login (important for future automation).
+2. **Submit form field names are bare** (`Destination`, `StartDate`, etc.) — NOT prefixed with model name (e.g., not `TravelRequest.Destination`).
+3. **Authorization redirects to /Account/AccessDenied with HTTP 200** — ASP.NET Identity returns 200 on the denial page, so HTTP status alone is insufficient to assert Forbid. Must check final URL OR page content.
+4. **Manager/Review form uses `formaction` handlers** (`?handler=Approve`, `?handler=Reject`, `?handler=Return`) — POSTs go to `/Manager/Review/{id}?handler=X`.
+5. **Resubmit form uses `action` with handler** (`/Employee/Detail/{id}?handler=Resubmit`).
+6. **Audit actor shown as GUID** (Identity UserId), not display name — cosmetic, not a bug.
+7. **TC13 upload behavior:** returns to Submit page with error message when blob storage not configured — the request is NOT created. This is the correct isolated-failure behavior.
+
+**Files produced:**
+- `.squad/files/stage4-workflow-test-results.md` — updated with Attempt #3 (full pass)
+
+**Gaps/bugs found:**
+- **None.** Stage 4 is clean. All authorization, state transitions, audit trail, and error handling working as designed.
