@@ -93,6 +93,15 @@
 - **Build:** 0 errors, 0 warnings.
 - **Commit:** `311c24f` on `dev`, pushed to `origin/dev`.
 
+### 2026-08-12T21:03:28-03:00 — Stage 4 DB Fix: Stage4WorkflowFields Migration Applied (Pippin's Bug Report)
+
+- **Root cause:** `Stage4WorkflowFields` migration (adds `TravelRequests.SubmittedAt` and `AuditLogEntries.Details`) was created but never applied to the LocalDB instance used for testing. `dotnet ef migrations list` showed it as `(Pending)`. First page load triggered `SqlException: Invalid column name 'SubmittedAt'` → HTTP 500.
+- **Active connection string:** LocalDB — `Server=(localdb)\mssqllocaldb;Database=TravelRequestWFDb_Dev` (from `appsettings.Development.json`). No Azure SQL credentials present locally.
+- **Fix:** `dotnet ef database update --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web` — applied `Stage4WorkflowFields` cleanly (ALTER TABLE TravelRequests ADD SubmittedAt + ALTER TABLE AuditLogEntries ADD Details). All 5 migrations now applied, none pending.
+- **Sanity check:** Started app on `http://localhost:5050`, logged in as `employee1@test.com`, hit `/Employee/Index` → **HTTP 200**, no SqlException, no error content.
+- **No code changes were needed** — pure DB state fix. No commit required.
+- **⚠️ LESSON — Always verify pending migrations before signaling done:** When a migration is created and committed, it is NOT automatically applied to the running database. The "migration created" step and the "migration applied" step are separate. Before declaring any schema-related work item complete, explicitly run `dotnet ef migrations list` and confirm no `(Pending)` entries remain. A pending migration will produce `SqlException: Invalid column name` on the very first query that touches the new column — a crash that is confusing to diagnose if you didn't check migration state first. Standard closing checklist: (1) create migration, (2) **apply migration**, (3) verify `migrations list` shows all applied, (4) sanity test the affected page.
+
 #### Exact PageModel Properties/Handlers Legolas Must Bind To
 
 **Employee/Submit.cshtml** (`SubmitModel`):
