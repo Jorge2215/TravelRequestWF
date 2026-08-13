@@ -1,101 +1,96 @@
 # Stage 4 Workflow — Test Results
 **Tester:** Pippin  
-**Date:** 2026-08-12T20:03:51-03:00  
-**Branch:** dev  
+**Branch:** dev
+
+---
+
+## Attempt History
+
+| Attempt | Date | Blocking Issue | TC1 | TCs 2–14 |
+|---|---|---|---|---|
+| #1 | 2026-08-12T20:03:51-03:00 | `BlobStorageService` constructor throws on every DI resolution (all pages 500) | ✅ PASS | ❌ ALL BLOCKED |
+| **#2** | **2026-08-12T23:47:34-03:00** | **`Stage4WorkflowFields` migration NOT applied to Azure SQL DB** (`Invalid column name 'SubmittedAt'`) | **✅ PASS** | **❌ ALL BLOCKED** |
+
+---
+
+## Attempt #2 — RE-RUN (2026-08-12T23:47:34-03:00)
+
+**Commit under test:** `311c24f` (Gandalf fix — BlobStorageService constructor guard moved to `UploadDocumentAsync`)
 **Build:** `dotnet build TravelRequestWF.slnx` — ✅ 0 errors, 0 warnings
 
----
+### ⚠️ NEW BLOCKING BUG DISCOVERED
 
-## ⚠️ BLOCKING BUG DISCOVERED
+**Bug:** `Stage4WorkflowFields` EF Core migration is PENDING — not applied to the Azure SQL database.
 
-**Before any workflow tests could run, a critical bug was found that blocks ALL Stage 4 workflow pages:**
+**Migration:** `20260812231909_Stage4WorkflowFields`
 
-### Bug: `BlobStorageService` Constructor Throws on ALL Workflow Requests
+**Columns not yet in DB:**
+- `TravelRequests.SubmittedAt` (datetime2, not nullable)
+- `AuditLogEntries.Details` (nvarchar(max), nullable)
 
-**Root cause:** `BlobStorageService` validates the Azure Storage connection string inside its **constructor** (line 17 of `BlobStorageService.cs`). When the placeholder value `"YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE"` is present (as it is in both `appsettings.json` and `appsettings.Development.json`), the constructor throws:
-
+**Symptom:** Any authenticated page that runs a query on `TravelRequests` or `AuditLogEntries` crashes with:
 ```
-System.InvalidOperationException: Azure Storage connection string is not configured.
-```
-
-**Why this is a bug (not an expected Azure Storage deferral):** The service is registered as **Scoped** (`builder.Services.AddScoped<IBlobStorageService, BlobStorageService>()`). This means it is instantiated **on every request** that resolves `ITravelRequestService` (which depends on `IBlobStorageService`). The DI container propagates the constructor exception, causing a 500 on **every authenticated page that uses `ITravelRequestService`** — including pages that never upload files: `Employee/Index`, `Employee/Submit`, `Employee/Detail`, `Manager/Index`, `Manager/Review`.
-
-**Decision contract (from `aragorn-stage4-workflow-scope.md` Decision 1):**
-> "The app will throw a clear `InvalidOperationException` at startup or on first upload attempt if the connection string is the placeholder value — NOT a silent stub."
-
-The intent was to throw **at startup** (if registered as singleton) OR **on first upload attempt** (deferred). The actual implementation throws on every request, blocking all workflow pages regardless of whether the user tries to upload a file.
-
-**Impact:** 100% of Stage 4 workflow tests blocked. The app is functionally untestable with the placeholder Azure Storage config.
-
-**Evidence:** Authenticated request to `GET /Employee/Index` returns HTTP 500 with full stack trace:
-```
-System.InvalidOperationException: Azure Storage connection string is not configured...
-  at BlobStorageService..ctor(IOptions`1 options)
-  ...
-  at Microsoft.AspNetCore.Mvc.RazorPages.Infrastructure.DefaultPageModelFactoryProvider...
+Microsoft.Data.SqlClient.SqlException: Invalid column name 'SubmittedAt'.
 ```
 
-**Fix needed (by Gandalf):** Move the connection string validation from the constructor to the `UploadDocumentAsync` method. The constructor should only store `_options`. This way, the service resolves without throwing, non-upload pages work, and upload attempts fail with a clear error only when a file is actually being uploaded.
+**Evidence:** `GET /Employee/Index` as employee1 → HTTP 500 with SqlException stack trace hitting `TravelRequestService.GetRequestsForEmployeeAsync` at line 174.
+
+**Confirmed via EF tools:** `dotnet ef migrations list` shows `Stage4WorkflowFields (Pending)`.
+
+**Fix needed (by Gandalf):** Run `dotnet ef database update --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web` against the Azure SQL connection, OR set up a startup migration auto-apply.
 
 ---
 
-## Azure Blob Storage Note
+### Test Case Table (Attempt #2)
 
-The Azure Storage connection string is a placeholder. File upload tests would be **DEFERRED** (not failures) per the test brief. However, because of the bug above, even non-upload tests cannot run.
-
----
-
-## Test Case Table
-
-| # | Description | Steps | Expected | Actual | Result |
-|---|---|---|---|---|---|
-| TC1 | Build passes with 0 errors | Run `dotnet build TravelRequestWF.slnx` | 0 errors, 0 warnings | 0 errors, 0 warnings | ✅ PASS |
-| TC2 | Employee1 submits travel request (no file) | Login as employee1; POST to /Employee/Submit with Destination, dates, Purpose | Success, redirect to Employee/Index, Status=Pending, ApproverId=manager1's EmployeeId | ❌ 500 — `BlobStorageService` constructor throws on DI resolution (blocking bug) | ❌ BLOCKED |
-| TC3 | Employee/Index shows new request with Pending badge | After submit, GET /Employee/Index | Request appears with Pending status badge | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC4 | Employee/Detail shows details, no Resubmit button | GET /Employee/Detail/{id} | Request details visible, no Resubmit button (Status=Pending) | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC5 | Employee2 accessing employee1's request → Forbid | Login as employee2; GET /Employee/Detail/{employee1's request id} | HTTP 403 Forbidden (ownership check) | ❌ 500 — same blocking bug (DI fails before authorization check runs) | ❌ BLOCKED |
-| TC6 | Manager1/Index shows employee1's pending request | Login as manager1; GET /Manager/Index | Employee1's request appears (ApproverId match) | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC7 | Manager2 accessing request assigned to manager1 → Forbid | Login as manager2; GET /Manager/Review/{id} | HTTP 403 Forbidden (ownership check) | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC8 | Manager1 approves request with comment | POST /Manager/Review/{id}?handler=Approve with Comments | Status=Approved, AuditLogEntry created with comment | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC9 | Manager1 rejects second request with comment | Submit 2nd request; Manager1 POST reject with comment | Status=Rejected, AuditLogEntry with comment | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC10 | Manager1 returns third request with comment | Submit 3rd request; Manager1 POST return with comment | Status=Returned, AuditLogEntry with comment | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC11 | Employee1 resubmits returned request | Get returned request Detail; click Resubmit | Status=Pending, new AuditLogEntry "Resubmitted" | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC12 | Submit as manager1 (no SuperiorId) | Login as manager1; attempt submit | Graceful error "No approver assigned" | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC13 | Audit trail ordering (submit→return→resubmit) | View Detail for multi-state request | Entries in chronological order | ❌ 500 — same blocking bug | ❌ BLOCKED |
-| TC14 | File upload with Azure Blob (deferred) | Submit with file attached | Upload attempt | DEFERRED — no Azure Storage connection string (expected, not a bug) | ⏸️ DEFERRED |
+| # | Description | Expected | Actual | Result |
+|---|---|---|---|---|
+| TC1 | Build: 0 errors | 0 errors | 0 errors, 0 warnings | ✅ PASS |
+| TC2 | Employee1 login → Employee/Index loads | HTTP 200 | HTTP 500 — `Invalid column name 'SubmittedAt'` (pending migration) | ❌ BLOCKED |
+| TC3 | Submit travel request (no file) → Status=Pending | Redirect, Status=Pending | Not reached — blocked at TC2 | ❌ BLOCKED |
+| TC4 | Employee/Index shows Pending badge | Badge visible | Not reached | ❌ BLOCKED |
+| TC5 | Employee/Detail — details display, no Resubmit | Details page renders | Not reached | ❌ BLOCKED |
+| TC6 | Employee2 accesses employee1's Detail → Forbid | HTTP 403 | Not reached | ❌ BLOCKED |
+| TC7 | Manager1/Index shows pending request | Request listed | Not reached | ❌ BLOCKED |
+| TC8 | Manager2 accesses Manager/Review → Forbid | HTTP 403 | Not reached | ❌ BLOCKED |
+| TC9 | Manager1 approves with comment | Status=Approved, audit entry | Not reached | ❌ BLOCKED |
+| TC10 | Manager1 rejects with comment | Status=Rejected, audit entry | Not reached | ❌ BLOCKED |
+| TC11 | Manager1 returns with comment | Status=Returned | Not reached | ❌ BLOCKED |
+| TC12 | Employee1 resubmits Returned → Status=Pending | Status=Pending, "Resubmitted" audit | Not reached | ❌ BLOCKED |
+| TC13 | File upload → graceful failure (storage not configured) | No crash; error message | Not reached | ❌ BLOCKED |
+| TC14 | Audit trail order (submit→return→resubmit) | Chronological entries | Not reached | ❌ BLOCKED |
 
 ---
 
-## Code Review: Untested Path Assessment
-
-While the blocking bug prevents runtime testing, the following was verified by **code review** of the implementation:
-
-### ✅ Looks Correct (Code Review)
-- **Authorization logic** (`Detail.cshtml.cs`, `Review.cshtml.cs`): Ownership checks (`Request.EmployeeId != employeeId` → `Forbid()`, `Request.ApproverId != info.employeeId` → `Forbid()`) are correctly placed in `OnGet`.
-- **ApproverId assignment**: `TravelRequestService.SubmitRequestAsync` reads `employee.SuperiorId` and assigns it to `request.ApproverId`. Null guard throws descriptive error.
-- **State transitions**: All methods validate current status before transitioning. Correct transitions: Pending→Approved, Pending→Rejected, Pending→Returned, Returned→Pending.
-- **Audit log writes**: Every state transition writes an `AuditLogEntry` with `TravelRequestId`, `Action`, `ActorId`, `Details` (for comments), `Timestamp`.
-- **Resubmit**: `ResubmitRequestAsync` validates `Status == Returned`, resets to `Pending`, writes "Resubmitted" audit entry.
-- **`GetRequestByIdAsync`**: Includes `AuditLog.OrderBy(a => a.Timestamp)` — audit trail correctly ordered.
-- **Index queries**: `GetRequestsForEmployeeAsync` filters by `EmployeeId`; `GetRequestsForManagerAsync` filters by `ApproverId`. Correct.
-- **`[Authorize(Roles = ...)]`** present on all page models.
-
-### ⚠️ Requires Fix
-- **`BlobStorageService` constructor validation**: Must move to `UploadDocumentAsync` (see bug above).
-
-### ℹ️ Code Note
-- `TravelRequestService.SubmitRequestAsync` saves the `TravelRequest` to DB first (getting its `Id`), then loops through `dto.Documents` calling `_blob.UploadDocumentAsync`. Since `BlobStorageService` is registered Scoped and its constructor throws, the save-before-upload logic is never exercised. Once the bug is fixed, the sequence is: (1) save request, (2) per document: upload to blob → save RequestDocument → write DocumentUploaded audit, (3) write Submitted audit. This is sound but means a partial failure during document upload (blob succeeds, DB save fails) could leave orphaned blobs — acceptable for PoC.
-
----
-
-## Summary
+### Attempt #2 Summary
 
 | Category | Count |
 |---|---|
 | ✅ PASS | 1 (TC1 Build) |
-| ❌ BLOCKED by Bug | 13 (TC2–TC13) |
-| ⏸️ DEFERRED | 1 (TC14 file upload — expected) |
+| ❌ BLOCKED by pending DB migration | 13 (TC2–TC14) |
 
-**Overall Stage 4 verdict: ❌ NOT TESTABLE — blocked by critical DI/BlobStorageService bug.**
+**Overall Stage 4 verdict (Attempt #2): ❌ NOT TESTABLE — pending `Stage4WorkflowFields` migration blocks all runtime tests.**
 
-A single-line fix (move validation from constructor to `UploadDocumentAsync`) would unblock all 13 blocked tests.
+**Good news:** The BlobStorageService fix from Gandalf (commit 311c24f) appears correct in code — the constructor no longer performs the connection string validation. That previous blocker should now be resolved once the DB migration is applied.
+
+---
+
+## Attempt #1 — Original Run (2026-08-12T20:03:51-03:00)
+
+### ⚠️ BLOCKING BUG (NOW FIXED by 311c24f)
+
+**Bug:** `BlobStorageService` constructor threw `InvalidOperationException` on every DI resolution, causing HTTP 500 on all workflow pages even when no file upload was attempted.
+
+**Root cause:** Connection string validation was in the constructor; service registered as Scoped → thrown on every request.
+
+**Fix applied:** Gandalf moved validation to `UploadDocumentAsync` (commit 311c24f). ✅
+
+### Code Review (from Attempt #1, still valid)
+
+- **Authorization logic**: Ownership checks (`Forbid()` on EmployeeId/ApproverId mismatch) correctly placed in OnGet handlers.
+- **ApproverId assignment**: Auto-set from `Employee.SuperiorId` on submission. Null guard present.
+- **State transitions**: All validated before transitioning. Correct state machine.
+- **Audit log writes**: Every transition writes `AuditLogEntry` with `TravelRequestId`, `Action`, `ActorId`, `Details`, `Timestamp`.
+- **Resubmit**: Validates `Status == Returned`, resets to `Pending`, writes "Resubmitted" audit.
+- **Audit ordering**: `GetRequestByIdAsync` includes `.OrderBy(a => a.Timestamp)`.
+- **Index queries**: Correctly filtered by `EmployeeId` / `ApproverId`.

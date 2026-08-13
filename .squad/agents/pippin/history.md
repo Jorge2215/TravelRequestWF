@@ -96,3 +96,26 @@ If a service validates configuration in its constructor AND is registered as Sco
 **Gaps/bugs found:**
 - **CRITICAL:** `BlobStorageService` constructor validation blocks ALL workflow pages. Fix: move validation to `UploadDocumentAsync`. Routed to decisions inbox.
 - TC14 (file upload with Azure Blob) remains DEFERRED pending real connection string from Jorgito — this was expected.
+
+### 2026-08-12T23:47:34-03:00 — Stage 4 Workflow Validation Re-Run (Attempt #2)
+
+**What I validated:**
+- `git pull origin dev` — commit `311c24f` (Gandalf's BlobStorageService fix) was already present.
+- `dotnet ef migrations list` → `20260812231909_Stage4WorkflowFields (Pending)` — migration NOT applied to Azure SQL.
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- App started at `http://localhost:5199`, PID 18388.
+- Login worked for employee1. GET /Employee/Index → **HTTP 500: `Invalid column name 'SubmittedAt'`**.
+- Confirmed: `Stage4WorkflowFields` migration adds `TravelRequests.SubmittedAt` and `AuditLogEntries.Details` — both absent from DB. All 13 workflow TCs blocked again.
+
+**Key learnings:**
+1. **Two blockers in a row:** First the BlobStorageService DI bug, now the unapplied migration. When multiple bugs block the same test pass, each must be fixed AND the migration applied before tests can run.
+2. **Always check `dotnet ef migrations list` before starting workflow tests.** If any migration is `(Pending)`, tests will fail at the SQL layer regardless of code correctness.
+3. **Handoff gap:** Gandalf fixed the code bug but did not apply the pending migration to the Azure SQL database before handing off to Pippin for re-testing. Need to make this a standard checklist item in the handoff protocol.
+4. **BlobStorageService fix looks correct in code** (constructor no longer validates the connection string per commit 311c24f) — but I couldn't confirm it runtime-tested since the migration blocker hit first.
+
+**Files produced:**
+- `.squad/files/stage4-workflow-test-results.md` — updated with Attempt #2 results
+- `.squad/decisions/inbox/pippin-pending-migration-stage4.md` — new bug report for Gandalf
+
+**Gaps/bugs found:**
+- **CRITICAL (Attempt #2):** `Stage4WorkflowFields` migration pending on Azure SQL — `SubmittedAt` column missing. Fix: `dotnet ef database update`. Routed to decisions inbox.
