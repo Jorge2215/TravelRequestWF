@@ -24,7 +24,7 @@ Both flows receive the **same JSON shape** via HTTP POST with `Content-Type: app
 
 ```json
 {
-  "RequestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "RequestId": "1006",
   "EventType": "Submitted",
   "EmployeeName": "Ana López",
   "EmployeeEmail": "ana.lopez@company.com",
@@ -73,7 +73,7 @@ Both flows receive the **same JSON shape** via HTTP POST with `Content-Type: app
 
 ```json
 {
-  "RequestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "RequestId": "1006",
   "EventType": "Submitted",
   "EmployeeName": "Ana López",
   "EmployeeEmail": "ana.lopez@company.com",
