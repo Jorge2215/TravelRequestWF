@@ -1,5 +1,0 @@
-Fix(docs): Use integer-as-string RequestId samples in Stage 5 Power Automate guide
-
-Replaced misleading UUID-style RequestId sample values with realistic integer-as-string examples (e.g. "1006") in .squad/files/stage5-power-automate-setup.md. Updated Sam agent history with a brief note.
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
