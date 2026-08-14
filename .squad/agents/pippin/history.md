@@ -152,3 +152,31 @@ If a service validates configuration in its constructor AND is registered as Sco
 
 **Gaps/bugs found:**
 - **None.** Stage 4 is clean. All authorization, state transitions, audit trail, and error handling working as designed.
+
+### 2026-08-12T22:03:45-03:00 — TC13 Azure Storage E2E Upload Verification (FULL PASS)
+
+**Context:** Jorgito created the real Azure Storage account and updated `appsettings.Development.json` with the real `AzureStorage:ConnectionString`. TC13 was previously deferred (graceful error was acceptable). Now verifying the real end-to-end upload works.
+
+**What I validated:**
+- `git pull origin dev` — already up to date.
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- App started at `http://localhost:5199`, PID 7216.
+- Logged in as employee1@test.com / Employee1!Pass — ✅
+- Submitted a new travel request (Paris, France, 2026-09-01 to 2026-09-07) WITH a real file (`test_upload.txt`) attached via multipart form POST using curl.
+- Submission redirected to `/Employee` (index) — **no error page**. ✅
+- **DB confirmed (TravelRequests):** RequestId=6, Destination="Paris, France", Status=0 (Pending). ✅
+- **DB confirmed (RequestDocuments):** Id=1, TravelRequestId=6, FileName="test_upload.txt", BlobUrl=`https://travelrequeststorage.blob.core.windows.net/travel-documents/ce547ee36afb429981ea76309a9a7f8f_test_upload.txt`. Real, well-formed Azure Blob URL. ✅
+- **Azure Storage confirmed via `az storage blob list`:** Blob `ce547ee36afb429981ea76309a9a7f8f_test_upload.txt` exists in container `travel-documents`, 79 bytes, content-type `text/plain`, Last Modified 2026-08-13T01:06:28+00:00. ✅
+- **Employee/Detail/6 page:** `test_upload.txt` present in document list; Azure Storage URL rendered as an `href` link with the exact blob URL. ✅
+- **DB confirmed (AuditLogEntries):** Two entries created for the submission:
+  - Id=8, Action=`DocumentUploaded`, TravelRequestId=NULL, RequestDocumentId=1 — Stage 2 "exactly one FK" invariant satisfied. ✅
+  - Id=9, Action=`Submitted`, TravelRequestId=6, RequestDocumentId=NULL — ✅
+- Stopped PID 7216.
+
+**Key learnings — TC13 real upload:**
+1. **BlobStorageService uploads with `PublicAccessType.None`** — the container is private; URLs are correct format but require a SAS token or connection string to access directly. This is correct for a PoC (documents are private).
+2. **Blob name format:** `{Guid:N}_{OriginalFileName}` — ensures uniqueness and preserves original name for display.
+3. **`az storage blob list` with `--connection-string` flag works** even when `--auth-mode login` fails (which requires Azure CLI auth). The connection string in appsettings.Development.json (masked in source) is sufficient for az CLI verification.
+4. **AuditLog MERGE INSERT:** EF Core emits a single MERGE statement for the two AuditLogEntry rows (DocumentUploaded + Submitted) — efficient and correct.
+
+**Verdict:** TC13 FULL PASS. Azure Blob Storage integration is working end-to-end with real storage. No bugs found.

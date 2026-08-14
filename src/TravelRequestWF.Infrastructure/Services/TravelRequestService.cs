@@ -8,11 +8,13 @@ public class TravelRequestService : ITravelRequestService
 {
     private readonly AppDbContext _db;
     private readonly IBlobStorageService _blob;
+    private readonly INotificationService _notification;
 
-    public TravelRequestService(AppDbContext db, IBlobStorageService blob)
+    public TravelRequestService(AppDbContext db, IBlobStorageService blob, INotificationService notification)
     {
         _db = db;
         _blob = blob;
+        _notification = notification;
     }
 
     public async Task<TravelRequest> SubmitRequestAsync(int employeeId, string actorUserId, SubmitRequestDto dto, CancellationToken ct = default)
@@ -71,6 +73,27 @@ public class TravelRequestService : ITravelRequestService
         });
 
         await _db.SaveChangesAsync(ct);
+
+        // Load Approver for notification payload
+        await _db.Entry(request).Reference(r => r.Approver).LoadAsync(ct);
+
+        var submitPayload = new NotificationPayload
+        {
+            RequestId = request.Id.ToString(),
+            EventType = "Submitted",
+            EmployeeName = employee.Name,
+            EmployeeEmail = employee.Email ?? string.Empty,
+            ManagerName = request.Approver?.Name ?? string.Empty,
+            ManagerEmail = request.Approver?.Email ?? string.Empty,
+            Destination = request.Destination,
+            StartDate = request.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = request.EndDate.ToString("yyyy-MM-dd"),
+            Purpose = request.Purpose,
+            Status = request.Status.ToString(),
+            Comments = null
+        };
+        await _notification.NotifyRequestSubmittedAsync(submitPayload);
+
         return request;
     }
 
@@ -96,6 +119,25 @@ public class TravelRequestService : ITravelRequestService
             Timestamp = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);
+
+        await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
+        await _db.Entry(request).Reference(r => r.Approver).LoadAsync(ct);
+        var approvePayload = new NotificationPayload
+        {
+            RequestId = request.Id.ToString(),
+            EventType = "Approved",
+            EmployeeName = request.Employee?.Name ?? string.Empty,
+            EmployeeEmail = request.Employee?.Email ?? string.Empty,
+            ManagerName = request.Approver?.Name ?? string.Empty,
+            ManagerEmail = request.Approver?.Email ?? string.Empty,
+            Destination = request.Destination,
+            StartDate = request.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = request.EndDate.ToString("yyyy-MM-dd"),
+            Purpose = request.Purpose,
+            Status = request.Status.ToString(),
+            Comments = comments
+        };
+        await _notification.NotifyRequestStatusChangedAsync(approvePayload);
     }
 
     public async Task RejectRequestAsync(int requestId, int managerEmployeeId, string actorUserId, string? comments, CancellationToken ct = default)
@@ -120,6 +162,25 @@ public class TravelRequestService : ITravelRequestService
             Timestamp = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);
+
+        await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
+        await _db.Entry(request).Reference(r => r.Approver).LoadAsync(ct);
+        var rejectPayload = new NotificationPayload
+        {
+            RequestId = request.Id.ToString(),
+            EventType = "Rejected",
+            EmployeeName = request.Employee?.Name ?? string.Empty,
+            EmployeeEmail = request.Employee?.Email ?? string.Empty,
+            ManagerName = request.Approver?.Name ?? string.Empty,
+            ManagerEmail = request.Approver?.Email ?? string.Empty,
+            Destination = request.Destination,
+            StartDate = request.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = request.EndDate.ToString("yyyy-MM-dd"),
+            Purpose = request.Purpose,
+            Status = request.Status.ToString(),
+            Comments = comments
+        };
+        await _notification.NotifyRequestStatusChangedAsync(rejectPayload);
     }
 
     public async Task ReturnRequestAsync(int requestId, int managerEmployeeId, string actorUserId, string? comments, CancellationToken ct = default)
@@ -144,6 +205,25 @@ public class TravelRequestService : ITravelRequestService
             Timestamp = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);
+
+        await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
+        await _db.Entry(request).Reference(r => r.Approver).LoadAsync(ct);
+        var returnPayload = new NotificationPayload
+        {
+            RequestId = request.Id.ToString(),
+            EventType = "Returned",
+            EmployeeName = request.Employee?.Name ?? string.Empty,
+            EmployeeEmail = request.Employee?.Email ?? string.Empty,
+            ManagerName = request.Approver?.Name ?? string.Empty,
+            ManagerEmail = request.Approver?.Email ?? string.Empty,
+            Destination = request.Destination,
+            StartDate = request.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = request.EndDate.ToString("yyyy-MM-dd"),
+            Purpose = request.Purpose,
+            Status = request.Status.ToString(),
+            Comments = comments
+        };
+        await _notification.NotifyRequestStatusChangedAsync(returnPayload);
     }
 
     public async Task ResubmitRequestAsync(int requestId, int employeeId, string actorUserId, CancellationToken ct = default)
@@ -167,6 +247,25 @@ public class TravelRequestService : ITravelRequestService
             Timestamp = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(ct);
+
+        await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
+        await _db.Entry(request).Reference(r => r.Approver).LoadAsync(ct);
+        var resubmitPayload = new NotificationPayload
+        {
+            RequestId = request.Id.ToString(),
+            EventType = "Resubmitted",
+            EmployeeName = request.Employee?.Name ?? string.Empty,
+            EmployeeEmail = request.Employee?.Email ?? string.Empty,
+            ManagerName = request.Approver?.Name ?? string.Empty,
+            ManagerEmail = request.Approver?.Email ?? string.Empty,
+            Destination = request.Destination,
+            StartDate = request.StartDate.ToString("yyyy-MM-dd"),
+            EndDate = request.EndDate.ToString("yyyy-MM-dd"),
+            Purpose = request.Purpose,
+            Status = request.Status.ToString(),
+            Comments = null
+        };
+        await _notification.NotifyRequestSubmittedAsync(resubmitPayload);
     }
 
     public async Task<IReadOnlyList<TravelRequest>> GetRequestsForEmployeeAsync(int employeeId, CancellationToken ct = default)
