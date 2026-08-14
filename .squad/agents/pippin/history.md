@@ -206,3 +206,36 @@ If a service validates configuration in its constructor AND is registered as Sco
 - `.squad/files/stage5-notification-test-results.md`
 - `.squad/decisions/inbox/pippin-requestid-uuid-mismatch.md`
 
+### 2026-08-13T22:56:55-03:00 — Stage 5 Live E2E Test (Real Power Automate URLs)
+
+**What I validated:**
+- `git pull origin dev` — already up to date.
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- App started at `http://localhost:5199`, Development mode confirmed via startup banner.
+- User-secrets injected automatically — real Power Automate URLs active.
+- Submitted two travel requests as employee1@test.com.
+- Ran Approve, Reject, and Return as manager1@test.com.
+- Checked HTTP call outcomes from app logs.
+
+**Results:**
+- Flow A (Submission notification → manager): **HTTP 400** on both attempts. Real HTTP call confirmed (not skipped), real PA endpoint reached, but PA rejected with 400 Bad Request. Bug report filed.
+- Flow B (Status change notification → employee):
+  - **Approve** (RequestId=2006): **HTTP 202** ✅
+  - **Return** (RequestId=6): **HTTP 202** ✅
+  - **Reject** (RequestId=2007): **HTTP 202** ✅
+- Core workflow DB transitions: all correct (Pending→Approved, Pending→Rejected, Pending→Returned). No regressions.
+- App non-blocking on Flow A failure: confirmed (no 500, workflow proceeded normally).
+
+**Key learnings — Live E2E test:**
+1. **Flow B URL and payload work correctly** — all 3 status change scenarios produce HTTP 202 from PA. Flow B is live.
+2. **Flow A returns HTTP 400** — payload or schema mismatch. The JSON body our app sends doesn't satisfy Flow A's trigger schema definition in PA. Jorgito must check PA portal to diagnose.
+3. **HTTP 202 is PA's standard "accepted" response** — it means the trigger was received and queued, NOT that the flow completed. Email delivery still needs to be confirmed by Jorgito via inbox and PA run history.
+4. **Submit form requires ISO date format (YYYY-MM-DD)** — MM/DD/YYYY format silently fails server-side model binding and re-renders the submit page. Important for future test automation.
+5. **Manager page shows ALL requests** (not just Pending) — `/Manager` lists all requests assigned to that manager regardless of status. Buttons for Approve/Reject/Return appear but are guarded by state — attempting an action on an already-processed request stays on the page without redirect (no crash, no double-processing).
+6. **HTTP 202 is PA's standard "accepted" response** — it means the trigger was received and queued, NOT that the flow completed. Email delivery still needs to be confirmed by Jorgito via inbox and PA run history.
+7. **Confirmed live PA URL pattern**: Flow A uses `/cu/28/workflows/...`, Flow B uses `/cu/03/workflows/...` — different PA environment CUs. Both are real PA HTTP triggers.
+
+**Files produced:**
+- `.squad/files/stage5-notification-test-results.md` — new live E2E section added
+- `.squad/decisions/inbox/pippin-flow-a-http-400.md` — bug report for Jorgito + Gandalf
+

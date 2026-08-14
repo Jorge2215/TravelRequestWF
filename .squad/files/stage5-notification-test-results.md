@@ -145,3 +145,164 @@ Power Automate schema type is `"string"` — it will accept any string value, so
 | Live email delivery | ⏸ DEFERRED — Jorgito must create real Power Automate flows and paste URLs into appsettings |
 
 **Stage 5 integration is solid.** The .NET notification layer is correctly wired, non-blocking, and produces the correct payload. Live email delivery validation is blocked only on Jorgito creating the actual flows in the Power Automate portal.
+
+---
+
+## Live End-to-End Test — Real Power Automate URLs (2026-08-13)
+
+**Tester:** Pippin  
+**Context:** Jorgito created two real Power Automate flows using HTTP-trigger connectors (Premium plan confirmed). Gandalf stored the real trigger URLs via .NET user-secrets (NOT committed to repo). Flows injected automatically in Development mode.
+
+### Build
+
+```
+dotnet build TravelRequestWF.slnx
+Build succeeded.  0 Warning(s)  0 Error(s)
+```
+✅ **PASS** — 0 errors, 0 warnings.
+
+### Environment Confirmation
+
+Console startup banner confirmed:
+```
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5199
+```
+✅ Development mode confirmed. User-secrets injected automatically.
+
+---
+
+### Flow A — Submission Notification
+
+**Action:** Logged in as `employee1@test.com`, submitted new travel request (Buenos Aires, 2026-09-01→2026-09-05). RequestId assigned: **2006**.  
+**Second submission** (Berlin, 2026-10-20→2026-10-25, ISO date format). RequestId assigned: **2007**.
+
+**Console log (RequestId=2006):**
+```
+Sending HTTP request POST https://defaulteef413388caf401187bfff1c9c425f.9e.environment.api.powerplatform.com/powerautomate/automations/direct/cu/28/workflows/e3a4d82e554843a0a5a32a5c4f475676/triggers/manual/paths/invoke?*
+Received HTTP response headers after 946.5072ms - 400
+warn: Power Automate Flow A (Submission) returned non-success status 400 for RequestId=2006.
+```
+
+**Console log (RequestId=2007):**
+```
+Sending HTTP request POST https://defaulteef413388caf401187bfff1c9c425f.9e.environment.api.powerplatform.com/powerautomate/automations/direct/cu/28/workflows/e3a4d82e554843a0a5a32a5c4f475676/triggers/manual/paths/invoke?*
+Received HTTP response headers after 872.5632ms - 400
+warn: Power Automate Flow A (Submission) returned non-success status 400 for RequestId=2007.
+```
+
+**Result: ❌ FAIL — HTTP 400 from Power Automate on BOTH submission attempts.**
+
+- ✅ Confirmed: HTTP call IS being made to the real Power Automate endpoint (URL reached, not skipped)  
+- ✅ Confirmed: Request was saved to DB (RequestId=2006 and 2007 created, status=Pending)  
+- ✅ Confirmed: App does NOT crash or raise a 500 — notification failure is non-blocking  
+- ❌ Power Automate responded with 400 Bad Request — payload mismatch or flow schema mismatch (see bug report `pippin-flow-a-http-400.md`)
+
+**Needs Jorgito to verify:** Check Power Automate run history for Flow A — are any run records present? If not, the 400 might indicate the trigger URL itself is correct but the request body doesn't satisfy the flow's schema definition.
+
+---
+
+### Flow B — Status Change Notification (Approve)
+
+**Action:** Logged in as `manager1@test.com`, approved RequestId=2006 with comment "Approved - live E2E test".
+
+**Console log:**
+```
+Sending HTTP request POST https://defaulteef413388caf401187bfff1c9c425f.9e.environment.api.powerplatform.com/powerautomate/automations/direct/cu/03/workflows/5621461b6d93422ba67490d6fad760e4/triggers/manual/paths/invoke?*
+Received HTTP response headers after 1066.6414ms - 202
+info: Power Automate Flow B (Status Change) notified successfully for RequestId=2006.
+```
+
+**Result: ✅ SUCCESS — HTTP 202 Accepted from Power Automate.**
+
+- ✅ Request 2006 status updated to Approved in DB  
+- ✅ Audit log entry created  
+- ✅ Power Automate returned 202 — flow triggered  
+
+**Needs Jorgito to verify:** Check Power Automate run history for Flow B (Approve) and confirm email received by employee1@test.com.
+
+---
+
+### Flow B — Status Change Notification (Return for More Info)
+
+**Action:** Manager1 returned RequestId=6 with comment "Return for more info - live E2E test".
+
+**Console log:**
+```
+Sending HTTP request POST https://defaulteef413388caf401187bfff1c9c425f.9e.environment.api.powerplatform.com/powerautomate/automations/direct/cu/03/workflows/5621461b6d93422ba67490d6fad760e4/triggers/manual/paths/invoke?*
+Received HTTP response headers after 564.307ms - 202
+info: Power Automate Flow B (Status Change) notified successfully for RequestId=6.
+```
+
+**Result: ✅ SUCCESS — HTTP 202 Accepted from Power Automate.**
+
+- ✅ Request 6 status updated to Returned in DB  
+- ✅ Power Automate returned 202 — flow triggered  
+
+**Needs Jorgito to verify:** Power Automate run history for Flow B (Return) and email to employee.
+
+---
+
+### Flow B — Status Change Notification (Reject)
+
+**Action:** Manager1 rejected RequestId=2007 with comment "REJECT - live Flow B test".
+
+**Console log:**
+```
+Sending HTTP request POST https://defaulteef413388caf401187bfff1c9c425f.9e.environment.api.powerplatform.com/powerautomate/automations/direct/cu/03/workflows/5621461b6d93422ba67490d6fad760e4/triggers/manual/paths/invoke?*
+Received HTTP response headers after 1139.2642ms - 202
+info: Power Automate Flow B (Status Change) notified successfully for RequestId=2007.
+```
+
+**Result: ✅ SUCCESS — HTTP 202 Accepted from Power Automate.**
+
+- ✅ Request 2007 status updated to Rejected in DB  
+- ✅ Power Automate returned 202 — flow triggered  
+
+**Needs Jorgito to verify:** Power Automate run history for Flow B (Reject) and email to employee.
+
+---
+
+### Core Workflow — Regression Check
+
+All DB state transitions confirmed correct with live notifications active:
+
+| Action | DB State Updated | Notification | Regression? |
+|--------|-----------------|--------------|-------------|
+| Submit | ✅ Pending | ❌ Flow A 400 | None — app non-blocking |
+| Approve | ✅ Approved | ✅ Flow B 202 | None |
+| Reject | ✅ Rejected | ✅ Flow B 202 | None |
+| Return | ✅ Returned | ✅ Flow B 202 | None |
+
+✅ **No regressions found.** Live notification calls do not affect core workflow correctness.
+
+---
+
+### Live Test Summary
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Build (0 errors) | ✅ | Console output |
+| Environment = Development | ✅ | Startup banner |
+| Flow A called (real HTTP, not skipped) | ✅ | HttpClient logs |
+| Flow A HTTP 202 | ❌ Got 400 | Bug report filed |
+| Flow B — Approve HTTP 202 | ✅ | Log: `notified successfully for RequestId=2006` |
+| Flow B — Reject HTTP 202 | ✅ | Log: `notified successfully for RequestId=2007` |
+| Flow B — Return HTTP 202 | ✅ | Log: `notified successfully for RequestId=6` |
+| App non-blocking on Flow A failure | ✅ | Workflow continued, no 500 |
+| Core DB transitions correct | ✅ | Status verified via employee page |
+| No regressions | ✅ | All actions complete normally |
+
+### What Jorgito Must Verify Manually
+
+1. **Power Automate portal → Flow A run history**: Were any runs recorded? If yes, the body was received but failed flow validation. If no runs at all, the 400 means PA rejected before running.  
+2. **Power Automate portal → Flow B run history**: 3 runs should appear (Approve, Reject, Return).  
+3. **Email inbox (employee1@test.com or the configured recipient)**: Did notification emails arrive for the 3 Flow B triggers?  
+4. **Flow A fix**: Once the 400 root cause is identified (likely payload schema mismatch), Gandalf should update the payload or Jorgito adjusts the flow's expected schema.
+
+### Process Cleanup
+
+- App process (PID 3520): stopped via `Stop-Process` (PID already exited after `stop_powershell`).
+- No temp files created in working directory.
