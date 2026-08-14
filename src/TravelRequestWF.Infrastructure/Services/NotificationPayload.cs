@@ -13,5 +13,5 @@ public class NotificationPayload
     public string EndDate { get; set; } = default!;     // ISO 8601: "yyyy-MM-dd"
     public string Purpose { get; set; } = default!;
     public string Status { get; set; } = default!;      // TravelRequestStatus enum .ToString()
-    public string? Comments { get; set; }
+    public string Comments { get; set; } = string.Empty;
 }

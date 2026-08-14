@@ -302,7 +302,21 @@ All DB state transitions confirmed correct with live notifications active:
 1. **Power Automate portal → Flow A run history**: Were any runs recorded? If yes, the body was received but failed flow validation. If no runs at all, the 400 means PA rejected before running.  
 2. **Power Automate portal → Flow B run history**: 3 runs should appear (Approve, Reject, Return).  
 3. **Email inbox (employee1@test.com or the configured recipient)**: Did notification emails arrive for the 3 Flow B triggers?  
-4. **Flow A fix**: Once the 400 root cause is identified (likely payload schema mismatch), Gandalf should update the payload or Jorgito adjusts the flow's expected schema.
+4. **Flow A fix**: ✅ Root cause identified and fixed by Gandalf — see below.
+
+---
+
+## Flow A Fix — Root Cause & Resolution (2026-08-13, Gandalf)
+
+**Root cause:** `NotificationPayload.Comments` was `string?` (nullable) and Flow A (Submit/Resubmit) set it to `null`. `System.Text.Json` serializes C# `null` as JSON `null`. Power Automate's trigger schema (generated from Jorgito's Postman sample with `"Comments": ""`) defines `Comments` as `string`, not nullable — so it rejects `null` with HTTP 400.
+
+**Why Flow B worked:** Manager always enters a comment string on Approve/Reject/Return, so `Comments` was never null on those paths.
+
+**Fix:**
+- `NotificationPayload.Comments`: changed from `string?` to `string` with `= string.Empty` default.
+- `TravelRequestService.cs`: all 5 `Comments` assignments updated — Submit/Resubmit use `string.Empty`, Approve/Reject/Return use `comments ?? string.Empty`.
+- Build: ✅ 0 errors, 0 warnings.
+- **Status:** Fix committed to `dev` — pending live re-verification by Pippin.
 
 ### Process Cleanup
 

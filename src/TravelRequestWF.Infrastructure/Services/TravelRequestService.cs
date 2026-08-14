@@ -90,7 +90,7 @@ public class TravelRequestService : ITravelRequestService
             EndDate = request.EndDate.ToString("yyyy-MM-dd"),
             Purpose = request.Purpose,
             Status = request.Status.ToString(),
-            Comments = null
+            Comments = string.Empty
         };
         await _notification.NotifyRequestSubmittedAsync(submitPayload);
 
@@ -135,7 +135,7 @@ public class TravelRequestService : ITravelRequestService
             EndDate = request.EndDate.ToString("yyyy-MM-dd"),
             Purpose = request.Purpose,
             Status = request.Status.ToString(),
-            Comments = comments
+            Comments = comments ?? string.Empty
         };
         await _notification.NotifyRequestStatusChangedAsync(approvePayload);
     }
@@ -178,7 +178,7 @@ public class TravelRequestService : ITravelRequestService
             EndDate = request.EndDate.ToString("yyyy-MM-dd"),
             Purpose = request.Purpose,
             Status = request.Status.ToString(),
-            Comments = comments
+            Comments = comments ?? string.Empty
         };
         await _notification.NotifyRequestStatusChangedAsync(rejectPayload);
     }
@@ -221,7 +221,7 @@ public class TravelRequestService : ITravelRequestService
             EndDate = request.EndDate.ToString("yyyy-MM-dd"),
             Purpose = request.Purpose,
             Status = request.Status.ToString(),
-            Comments = comments
+            Comments = comments ?? string.Empty
         };
         await _notification.NotifyRequestStatusChangedAsync(returnPayload);
     }
@@ -263,7 +263,7 @@ public class TravelRequestService : ITravelRequestService
             EndDate = request.EndDate.ToString("yyyy-MM-dd"),
             Purpose = request.Purpose,
             Status = request.Status.ToString(),
-            Comments = null
+            Comments = string.Empty
         };
         await _notification.NotifyRequestSubmittedAsync(resubmitPayload);
     }

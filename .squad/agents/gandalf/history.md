@@ -201,5 +201,20 @@ EventType values by method:
 
 **Lesson — Secrets and appsettings.json:** Real SAS-signed URLs, API keys, and connection strings must NEVER be written to any tracked file (including `appsettings.json`, `appsettings.Development.json`). Use .NET user-secrets for local dev. If a secret lands in a tracked file (even uncommitted), replace it with a placeholder immediately. In this case the real URLs were in the working tree but never staged/committed, so no git history rewrite was needed.
 
+### 2026-08-13T23:26:56-03:00 — Flow A HTTP 400 Root Cause Fix (Comments null → "")
 
+**Root cause:** `NotificationPayload.Comments` was declared `string?` (nullable) and all Flow A call sites (Submit, Resubmit) set it to `null`. `System.Text.Json` serializes `null` as the JSON literal `null`. Power Automate's HTTP trigger schema (auto-generated from Jorgito's sample payload) defines `Comments` as `string` — not nullable — so it rejects `null` with HTTP 400. Jorgito's working Postman body explicitly sends `"Comments": ""` (empty string), which PA accepts fine.
+
+**Evidence confirming null is the root cause:**
+- Pippin's mock listener captured `"Comments": null` from the app.
+- Jorgito's Postman body that works uses `"Comments": ""`.
+- Flow B (Approve/Reject/Return) got HTTP 202 — those paths set `Comments = comments` where manager always provides a non-null comment string.
+- All other 11 payload fields are PascalCase and match exactly. Only `Comments` differs.
+
+**Fix applied:**
+- `NotificationPayload.cs`: changed `public string? Comments { get; set; }` to `public string Comments { get; set; } = string.Empty;` — no nullable, defaults to empty.
+- `TravelRequestService.cs`: all 5 `Comments` assignments updated — `= null` → `= string.Empty` (Flow A Submit/Resubmit), `= comments` → `= comments ?? string.Empty` (Flow B Approve/Reject/Return).
+- Build: 0 errors, 0 warnings. Committed on `dev`.
+
+**Note for Pippin:** When re-testing live, confirm Flow A now returns HTTP 202 and a run appears in the PA portal's run history.
 

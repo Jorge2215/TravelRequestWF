@@ -2,8 +2,34 @@
 
 **Filed by:** Pippin  
 **Date:** 2026-08-13  
+**Fixed by:** Gandalf  
+**Fix date:** 2026-08-13  
+**Status:** ✅ FIXED — pending live re-verification by Pippin  
 **Severity:** High (submission notification not delivered)  
 **Component:** `PowerAutomateNotificationService` — Flow A (Submission)
+
+---
+
+## Root Cause (Confirmed by Gandalf)
+
+`NotificationPayload.Comments` was declared `string?` (nullable). Flow A call sites (Submit, Resubmit) assigned `Comments = null`. `System.Text.Json` serializes C# `null` as JSON `null`. Power Automate's HTTP trigger schema (generated from Jorgito's sample JSON which uses `"Comments": ""`) defines the field as `string` — not nullable — so PA rejects `null` with HTTP 400.
+
+**Why Flow B worked (202):** Manager always provides a comment string, so `Comments = comments` was never null on Flow B paths.
+
+---
+
+## Fix Applied
+
+- `NotificationPayload.cs`: `public string? Comments` → `public string Comments { get; set; } = string.Empty`
+- `TravelRequestService.cs`:
+  - Submit: `Comments = null` → `Comments = string.Empty`
+  - Resubmit: `Comments = null` → `Comments = string.Empty`
+  - Approve/Reject/Return: `Comments = comments` → `Comments = comments ?? string.Empty`
+- Build: 0 errors, 0 warnings confirmed.
+
+---
+
+
 
 ---
 
