@@ -5,6 +5,8 @@
 **Branch:** `dev`  
 **Scope:** PowerAutomateNotificationService — non-blocking validation, payload capture, contract cross-check
 
+> ⚠️ **INTERRUPTED RUN (2026-08-13T23:22):** Jorgito requested stop before any further scenarios were started. All scenarios already executed are fully recorded below. The live E2E section (real PA URLs) is complete — no partial scenarios were in-flight at stop time. dotnet process was already stopped.
+
 ---
 
 ## 1. Build
