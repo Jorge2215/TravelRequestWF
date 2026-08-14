@@ -180,3 +180,29 @@ If a service validates configuration in its constructor AND is registered as Sco
 4. **AuditLog MERGE INSERT:** EF Core emits a single MERGE statement for the two AuditLogEntry rows (DocumentUploaded + Submitted) — efficient and correct.
 
 **Verdict:** TC13 FULL PASS. Azure Blob Storage integration is working end-to-end with real storage. No bugs found.
+
+### 2026-08-13T21:39:42-03:00 — Stage 5 Notification Integration Validation (PASS with one doc note)
+
+**What I validated:**
+- `git pull origin dev` — already up to date.
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- Reviewed `PowerAutomateNotificationService`: explicit PLACEHOLDER detection + try/catch on HTTP call → non-blocking confirmed by code review.
+- App started at `http://localhost:5199`, PID 6984.
+- Logged in as employee1@test.com, submitted a request with mock listener on port 9999 as FlowASubmissionUrl → submission succeeded, redirect to `/Employee`. Log: `Flow A (Submission) notified successfully for RequestId=1006`.
+- Logged in as manager1@test.com, approved request → success, redirect to `/Manager`. Log: `Flow B (Status Change) URL not configured — skipping notification for RequestId=1006`.
+- Captured exact JSON payload from mock listener — all 12 fields correct.
+- Reverted appsettings.Development.json to PLACEHOLDER. Stopped PID 6984.
+- Cross-checked Sam's setup guide vs Gandalf's NotificationPayload: all 12 fields match. One minor doc mismatch: Sam's sample shows RequestId as UUID, actual value is integer string (int PK.ToString()). Not a runtime bug.
+
+**Key learnings — Stage 5:**
+1. **`System.Net.HttpListener` in a PowerShell Runspace** is a clean way to capture HTTP payloads locally without installing any extra tooling.
+2. **Non-blocking pattern:** PLACEHOLDER-skip is in the `return` path (no exception). HTTP failures are caught and logged at Error level — workflow proceeds regardless.
+3. **RequestId is integer string, not UUID.** Any future test or sample payload generator must use integers, not GUIDs.
+4. **Login URL is /Account/Login** (confirmed again). Submit fields are bare, not prefixed.
+5. **Manager Review route is `/Manager/Review/{id}` (path segment)**, not query string `?id=`. Handler is `?handler=Approve`.
+6. **Log entries are visible at Information level** — not silently swallowed. Skips and successes both log.
+
+**Files produced:**
+- `.squad/files/stage5-notification-test-results.md`
+- `.squad/decisions/inbox/pippin-requestid-uuid-mismatch.md`
+
