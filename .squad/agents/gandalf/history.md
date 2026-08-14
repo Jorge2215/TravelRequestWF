@@ -136,4 +136,52 @@
 - Handler: `OnPostRejectAsync(int id)` → `asp-page-handler="Reject"` + `asp-route-id`
 - Handler: `OnPostReturnAsync(int id)` → `asp-page-handler="Return"` + `asp-route-id`
 
+### 2026-08-13T21:45:00-03:00 — Stage 5: Power Automate Notification Integration
+
+**What was built:**
+
+- **`INotificationService`** (`src/TravelRequestWF.Infrastructure/Services/INotificationService.cs`): Interface with `NotifyRequestSubmittedAsync(NotificationPayload)` and `NotifyRequestStatusChangedAsync(NotificationPayload)`.
+- **`NotificationPayload`** (`src/TravelRequestWF.Infrastructure/Services/NotificationPayload.cs`): Canonical DTO for both flows.
+- **`PowerAutomateNotificationService`** (`src/TravelRequestWF.Infrastructure/Services/PowerAutomateNotificationService.cs`): Typed `HttpClient` implementation. Skips gracefully if URL is blank or starts with "PLACEHOLDER". Catches all exceptions, logs them, never throws — DB transaction is already committed by the time the notification runs.
+- **TravelRequestService wired:** Submit/Resubmit → `NotifyRequestSubmittedAsync`; Approve/Reject/Return → `NotifyRequestStatusChangedAsync`. Navigation properties (`Employee`, `Approver`) are explicitly loaded via `_db.Entry(...).Reference(...).LoadAsync()` before building the payload.
+- **Config keys added** to both `appsettings.json` and `appsettings.Development.json`: `PowerAutomate:FlowASubmissionUrl` and `PowerAutomate:FlowBStatusChangeUrl` — both set to placeholder strings.
+- **DI in Program.cs:** `AddHttpClient<PowerAutomateNotificationService>()` + `AddScoped<INotificationService, PowerAutomateNotificationService>()`.
+- **Build:** `dotnet build TravelRequestWF.slnx` — 0 errors, 0 warnings.
+- **Commit:** `f3bb58d` on `dev`, pushed to `origin/dev`.
+
+**Lesson — GitHub Push Protection & `AccountKey=` pattern:** The string `AccountKey=` in any file (even with masked `******` value) triggers GitHub's Azure Storage secret scanner. The appsettings.Development.json previously had the pattern from an earlier agent's commit. Amended the commit to replace the entire AzureStorage connection string with `YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE` placeholder before pushing.
+
+**Lesson — EF Entry.Reference().LoadAsync():** When notification payloads need navigation properties that weren't part of the original query (e.g., `FindAsync` which doesn't support `.Include()`), use `_db.Entry(entity).Reference(r => r.NavProp).LoadAsync(ct)` after `SaveChangesAsync`. This is cleaner than re-querying the full entity.
+
+**Canonical JSON Payload shape (PascalCase — for Sam/Power Automate):**
+
+Both Flow A (submission) and Flow B (status change) receive identical payload structure:
+
+```json
+{
+  "RequestId": "42",
+  "EventType": "Submitted",
+  "EmployeeName": "Ana López",
+  "EmployeeEmail": "ana.lopez@company.com",
+  "ManagerName": "Carlos Ruiz",
+  "ManagerEmail": "carlos.ruiz@company.com",
+  "Destination": "Buenos Aires",
+  "StartDate": "2026-08-20",
+  "EndDate": "2026-08-25",
+  "Purpose": "Client meeting",
+  "Status": "Pending",
+  "Comments": null
+}
+```
+
+EventType values by method:
+- Submit → `"Submitted"`, Status = `"Pending"`
+- Resubmit → `"Resubmitted"`, Status = `"Pending"`
+- Approve → `"Approved"`, Status = `"Approved"`
+- Reject → `"Rejected"`, Status = `"Rejected"`
+- Return → `"Returned"`, Status = `"Returned"`
+
+`Comments` is non-null only for Approve/Reject/Return (manager's reason text). `RequestId` is the integer primary key as a string. Dates are ISO 8601 `"yyyy-MM-dd"`. Serialized with `System.Text.Json` defaults (PascalCase property names, no special options).
+
+
 
