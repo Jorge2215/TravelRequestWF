@@ -1,5 +1,8 @@
 # Sam — Task: Stage 5b Power Automate Blob-Triggered Flows
 
+> ⚠️ **SUPERSEDED — 2026-08-13T22:51:00-03:00**
+> This task is NO LONGER NEEDED. Jorgito confirmed the original HTTP trigger design from Stage 5 works fine on his Power Automate plan. The two real Power Automate HTTP trigger flows are live. The blob-trigger fallback redesign has been abandoned. Do not implement this task.
+
 **Assigned to:** Sam
 **Requested by:** Aragorn
 **Date:** 2026-08-13T22:15:00-03:00

@@ -183,5 +183,23 @@ EventType values by method:
 
 `Comments` is non-null only for Approve/Reject/Return (manager's reason text). `RequestId` is the integer primary key as a string. Dates are ISO 8601 `"yyyy-MM-dd"`. Serialized with `System.Text.Json` defaults (PascalCase property names, no special options).
 
+### 2026-08-13T22:51:00-03:00 — Stage 5b SUPERSEDED + User-Secrets Setup
+
+**Stage 5b (blob-trigger redesign) is NOT NEEDED.** Jorgito confirmed the original HTTP trigger design from Stage 5 works fine on his Power Automate plan — the perceived licensing block was a designer UI quirk, not a real restriction. Both Power Automate flows are live with real HTTP trigger URLs.
+
+**What was done instead:**
+- Ran `dotnet user-secrets init --project src/TravelRequestWF.Web` → added `UserSecretsId` to the .csproj.
+- Set both real Power Automate trigger URLs via `dotnet user-secrets set` — stored locally in the .NET user-secrets store (OS user profile), **never committed to source control**.
+- Replaced the working-tree `appsettings.json` PowerAutomate section (which had briefly contained the real URLs) with `PLACEHOLDER_SET_VIA_USER_SECRETS` values — these placeholder values are what lives in git.
+- `appsettings.Development.json` already had `PLACEHOLDER_FLOW_A_URL` / `PLACEHOLDER_FLOW_B_URL` — left as-is (user-secrets override at runtime in Development).
+- `WebApplication.CreateBuilder` automatically adds the user-secrets provider in Development environment when `UserSecretsId` is set — no explicit `AddUserSecrets<Program>()` call needed in `Program.cs`.
+- Build: 0 errors, 0 warnings.
+- Committed: `f1973ac` on `dev` — only the csproj (`UserSecretsId` added) and the appsettings.json placeholder update. No secrets committed.
+- Pushed to `origin/dev`.
+
+**Stage 5b task briefs (Gandalf's and Sam's) are superseded.** See `.squad/agents/gandalf/task-stage5b-blob-notification-redesign.md` and `.squad/agents/sam/task-stage5b-power-automate-blob-flows.md` — both marked SUPERSEDED at top.
+
+**Lesson — Secrets and appsettings.json:** Real SAS-signed URLs, API keys, and connection strings must NEVER be written to any tracked file (including `appsettings.json`, `appsettings.Development.json`). Use .NET user-secrets for local dev. If a secret lands in a tracked file (even uncommitted), replace it with a placeholder immediately. In this case the real URLs were in the working tree but never staged/committed, so no git history rewrite was needed.
+
 
 
