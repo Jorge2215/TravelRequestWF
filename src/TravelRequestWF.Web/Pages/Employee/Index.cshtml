@@ -1,0 +1,59 @@
+@page
+@model TravelRequestWF.Web.Pages.Employee.IndexModel
+@{
+    ViewData["Title"] = "My Travel Requests";
+}
+
+<h2>My Travel Requests</h2>
+<a asp-page="/Employee/Submit" class="btn btn-primary mb-3">+ New Request</a>
+
+@if (Model.Requests == null || !Model.Requests.Any())
+{
+    <div class="alert alert-info" role="alert">You have no travel requests yet.</div>
+}
+else
+{
+    <table class="table table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>Destination</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var request in Model.Requests)
+            {
+                <tr>
+                    <td>@request.Destination</td>
+                    <td>@request.StartDate.ToString("yyyy-MM-dd")</td>
+                    <td>@request.EndDate.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @switch (request.Status)
+                        {
+                            case TravelRequestStatus.Pending:
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                break;
+                            case TravelRequestStatus.Approved:
+                                <span class="badge bg-success">Approved</span>
+                                break;
+                            case TravelRequestStatus.Rejected:
+                                <span class="badge bg-danger">Rejected</span>
+                                break;
+                            case TravelRequestStatus.Returned:
+                                <span class="badge bg-secondary">Returned</span>
+                                break;
+                        }
+                    </td>
+                    <td>@request.SubmittedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>
+                        <a asp-page="/Employee/Detail" asp-route-id="@request.Id" class="btn btn-sm btn-outline-primary">View</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

@@ -8,4 +8,35 @@
 
 ## Learnings
 
-- (none yet)
+### 2026-08-11 — Stage 3 Identity UI
+
+- Gandalf's `ApplicationUser` class landed at `TravelRequestWF.Infrastructure.Identity.ApplicationUser` — always check `.squad/agents/gandalf/task-stage3-identity-backend.md` for the exact namespace before writing Identity UI code.
+- Even when a parallel agent hasn't "pushed" yet, their work can already be in the local working tree (committed locally but not remote-pushed). Always run `git pull` AND check with `glob **/ApplicationUser.cs` before assuming the dependency is absent.
+- The `@inject` directive for `SignInManager<ApplicationUser>` belongs in `_Layout.cshtml` body (after `<body>`), not in `<head>` — Razor processes it fine wherever it appears in the view but placing it inside the component that uses it keeps things clean.
+- Self-registered users are auto-assigned the `Employee` role in `Register.cshtml.cs`. Role assignment to `Manager` is manual/admin-only for this PoC — document this in register page comments.
+- `dotnet build TravelRequestWF.slnx` succeeded cleanly (0 errors, 0 warnings) after Gandalf's Identity backend changes were present locally.
+
+### 2026-08-12 — Stage 4 Workflow UI
+
+- Ran parallel with Gandalf who owns the .cshtml.cs code-behind. The brief specified exact property/handler names — bind against those regardless of whether Gandalf's code has landed.
+- Gandalf's Stage 4 stubs existed on `dev` but were empty shells (no `[BindProperty]` properties at all). The build produced 56 CS1061 errors — every single one was "model does not contain definition" due to missing PageModel properties, not markup errors. Zero false-positives on the markup side.
+- The `TravelRequest` entity uses `AuditLog` (not `AuditLogEntries`) as the navigation property name — always verify entity field names in `Entities/*.cs` before writing markup, don't assume from the brief.
+- Status badge colors: Pending=bg-warning text-dark, Approved=bg-success, Rejected=bg-danger, Returned=bg-secondary (not bg-info — brief says bg-secondary for Returned).
+- Manager/Review.cshtml: used a single `<form>` with three `asp-page-handler` buttons (Approve/Reject/Return) sharing one `Comments` textarea — this is cleaner than three separate forms with duplicate hidden inputs.
+- `_ViewImports.cshtml` needed `@using TravelRequestWF.Infrastructure.Entities` added so all pages can use `TravelRequestStatus` enum and entity types without per-page `@using` directives.
+- WIP commit + push done. Coordinator should re-invoke Legolas once Gandalf's PageModel properties land to run the final combined build verification.
+
+### 2026-08-14 — Phase 6 Gap 3: file type/size hint on Submit UI
+
+- Added `accept=".pdf,.docx,.jpg,.jpeg,.png,.gif"` to the `<input type="file" multiple>` on `Employee/Submit.cshtml` — browsers now filter the file picker to allowed types.
+- Added `<div class="form-text text-muted">` help text below the input: "Accepted file types: PDF, DOCX, JPG, PNG, GIF. Max 10 MB per file." — matches Bootstrap convention already used nowhere else on this page (validation spans use `text-danger`; `form-text text-muted` is the standard Bootstrap hint style).
+- Build: 0 errors, 0 warnings. Committed `3bbd8fb` and pushed to `dev`.
+- Gandalf is handling backend enforcement (whitelist + 10 MB cap in `TravelRequestService`) in parallel — UI hint is intentionally the only change here.
+
+### 2026-08-12 — Stage 4 final build pass
+
+- Combined build (`dotnet build TravelRequestWF.slnx`) passed: **0 errors, 0 warnings** once Gandalf's PageModel properties were present.
+- Gandalf's RZ1010 fix: Razor disallows `@{ var x = ...; }` code blocks nested inside an `else {}` branch that is itself inside an outer `@if/else`. Fix is to inline the LINQ expression directly inside the `@if` and `@foreach` — no intermediate variable needed.
+- `AuditLogEntry` gained a nullable `Details` field in Stage 4 — added a "Details" column to both audit trail tables (Detail.cshtml and Review.cshtml). Always re-check entity shapes after Gandalf's migrations land.
+- Final commit: `cf7f842` pushed to `dev`. Stage 4 UI complete.
+

@@ -1,0 +1,59 @@
+name: Deploy TravelRequestWF.Web to Azure App Service
+
+# Triggered whenever commits are pushed/merged to main.
+# main is the production branch — Jorgito manages all merges to main himself.
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up .NET 10 SDK ──────────────────────────────────────────────
+      # The Web project targets net10.0 (see TravelRequestWF.Web.csproj).
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # ── 3. Restore NuGet packages ──────────────────────────────────────────
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # ── 4. Build (Release) ─────────────────────────────────────────────────
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # ── 5. Publish the Web app to ./publish ───────────────────────────────
+      - name: Publish
+        run: dotnet publish src/TravelRequestWF.Web/TravelRequestWF.Web.csproj -c Release -o ./publish
+
+      # ── 6. Deploy to Azure App Service ────────────────────────────────────
+      # BEFORE THIS STEP WILL SUCCEED, Jorgito must configure two things
+      # in the GitHub repository (Settings → Secrets and variables → Actions):
+      #
+      #   VARIABLE  AZURE_WEBAPP_NAME
+      #     → the exact name of the Azure App Service Web App resource
+      #       (e.g. "travelrequestwf-web").  Add under the "Variables" tab.
+      #
+      #   SECRET    AZURE_WEBAPP_PUBLISH_PROFILE
+      #     → the full XML content of the publish profile downloaded from the
+      #       Azure Portal: App Service → "Get publish profile" → open the
+      #       downloaded .PublishSettings file → copy ALL content → paste as
+      #       the secret value.  Add under the "Secrets" tab.
+      #
+      # See .squad/files/phase10-web-deploy-workflow-setup.md for step-by-step
+      # instructions.
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./publish

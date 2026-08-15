@@ -1,0 +1,21 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Welcome</h1>
+    @if (User.IsInRole("Manager"))
+    {
+        <p><a asp-page="/Manager/Index" class="btn btn-primary">Go to Manager Dashboard</a></p>
+    }
+    else if (User.IsInRole("Employee"))
+    {
+        <p><a asp-page="/Employee/Index" class="btn btn-primary">Go to My Travel Requests</a></p>
+    }
+    else
+    {
+        <p><a asp-page="/Account/Login" class="btn btn-outline-primary">Login</a> to get started.</p>
+    }
+</div>
