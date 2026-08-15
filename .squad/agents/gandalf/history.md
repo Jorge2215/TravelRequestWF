@@ -8,6 +8,14 @@
 
 ## Learnings
 
+### 2026-08-15T20:40:00-03:00 — Registration Fix: Always Create Linked Employee Row
+
+- **Identity + Domain entity gap:** ASP.NET Core Identity manages `ApplicationUser` independently of domain entities. Any page that registers a user must ALSO create the domain entity and link the FK — Identity `CreateAsync` does NOT do this automatically.
+- **Namespace collision pitfall:** Using `new Employee { ... }` in `TravelRequestWF.Web.Pages.Account` compiles but CS0118 fires because `TravelRequestWF.Web.Pages.Employee` is a namespace. Use fully-qualified `new TravelRequestWF.Infrastructure.Entities.Employee { ... }` when both exist in scope.
+- **`OnGet` vs. `OnPost` symmetry:** Any page populating a dropdown must call the loader in both GET and POST (re-display on validation errors). Extracted to `LoadManagerOptionsAsync()`.
+- **Edge case — no managers:** Gracefully degrade the dropdown to a text note. Users can still register; the Submit page surfaces "No approver assigned" gracefully (already caught and displayed).
+- **Repair SQL pattern:** When a real user account is already broken in production, the safest path is a minimal two-statement SQL script (INSERT + UPDATE with SCOPE_IDENTITY) that Jorgito runs manually via Azure Portal Query Editor — no migration, no code risk.
+
 ### 2026-08-14T23:35:00-03:00 — Phase 7: IAuditLogger Extraction
 
 - **Pattern: LogAsync without SaveChangesAsync.** When extracting inline DB-write calls from a service that batches multiple changes in one `SaveChangesAsync`, the extracted method must NOT call `SaveChangesAsync` itself — otherwise the atomic batch is broken into multiple transactions. The caller remains responsible for committing.

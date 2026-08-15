@@ -15,6 +15,26 @@
                 <span asp-validation-for="Input.Email" class="text-danger"></span>
             </div>
             <div class="mb-3">
+                <label asp-for="Input.FullName" class="form-label"></label>
+                <input asp-for="Input.FullName" class="form-control" autocomplete="name" />
+                <span asp-validation-for="Input.FullName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.ManagerId" class="form-label"></label>
+                @if (Model.ManagerOptions.Any())
+                {
+                    <select asp-for="Input.ManagerId" asp-items="Model.ManagerOptions" class="form-select">
+                        <option value="">-- Select your manager (optional) --</option>
+                    </select>
+                }
+                else
+                {
+                    <input type="hidden" asp-for="Input.ManagerId" value="" />
+                    <p class="form-text text-muted">No managers are available yet — you can be assigned one later.</p>
+                }
+                <span asp-validation-for="Input.ManagerId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
                 <label asp-for="Input.Password" class="form-label"></label>
                 <input asp-for="Input.Password" class="form-control" autocomplete="new-password" />
                 <span asp-validation-for="Input.Password" class="text-danger"></span>
