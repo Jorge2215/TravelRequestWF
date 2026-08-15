@@ -118,3 +118,28 @@ pm install -g azure-functions-core-tools@4 --unsafe-perm true.
 - **Fix:** Use AddDbContext((serviceProvider, options) => { var cfg = serviceProvider.GetRequiredService<IConfiguration>(); ... }) factory overload so config resolution is deferred to first DI resolution (not host build time).
 - **Runtime guard pattern:** Store config values as fields in the constructor (null-safe). At the top of the function method body, check for empty/placeholder values and LogWarning + eturn early. Never let missing config throw an unhandled exception from within a timer trigger body.
 - **Ordering gotcha:** unc azure functionapp publish runs 'sync triggers' as part of the publish flow. This step requires the worker process to start cleanly. If Application Settings are set AFTER publish, but the code needs them at startup, the sequence is wrong. Always either (a) set Application Settings first, then publish; or (b) make the host startup null-safe (preferred) so order doesn't matter.
+
+---
+
+### Phase 10 — CI/CD Workflow for Azure App Service
+**Date:** 2026-08-15 | **Requested by:** Jorgito
+
+**Delivered:**
+- `.github/workflows/deploy-web.yml` — GitHub Actions CI/CD pipeline for `TravelRequestWF.Web` → Azure App Service. Trigger: push to `main`. Uses `azure/webapps-deploy@v3` with repo Variable `AZURE_WEBAPP_NAME` + repo Secret `AZURE_WEBAPP_PUBLISH_PROFILE`. .NET SDK pinned to `10.0.x` (matches Web project TFM). No hardcoded App Service name — Jorgito fills in the variable once he names the resource in the portal.
+- `.squad/files/phase10-web-deploy-workflow-setup.md` — step-by-step guide for Jorgito: get publish profile → add GitHub secret → add GitHub variable → merge dev→main to activate.
+
+**Status:** Authored on `dev`. Awaiting: (1) Jorgito creates App Service resource in Portal; (2) sets `AZURE_WEBAPP_NAME` variable + `AZURE_WEBAPP_PUBLISH_PROFILE` secret; (3) merges `dev` → `main` to activate the pipeline.
+
+---
+
+## Learnings (continued)
+
+### 11. GitHub Actions — Publish Profile vs Service Principal auth
+- `azure/webapps-deploy@v3` accepts either `publish-profile` (XML from Portal) or `azure-credentials` (service principal JSON). For PoC / single-developer projects the publish profile is simpler: no Azure AD app registration needed, just Portal → "Get publish profile" → GitHub secret.
+- Publish profiles contain credentials scoped to a single App Service (deployment slot level). No subscription-level access — appropriate for this project's security posture.
+- Repo **Variables** (not secrets) are the right home for non-sensitive config like app name — visible in workflow logs, safe to inspect.
+
+### 12. Workflow file on `dev`, targeting `main`
+- The workflow was created on `dev` (branch convention: never write to `main` directly). The `on: push: branches: [main]` trigger will only activate once Jorgito merges to `main`. Until then, the file sits inert on `dev`.
+- dotnet publish with `-o ./publish` produces a self-contained deploy package relative to the runner workspace — correct path for `azure/webapps-deploy@v3`'s `package:` input.
+

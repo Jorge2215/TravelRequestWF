@@ -2,6 +2,129 @@
 
 ## Active Decisions
 
+### 2026-08-15T11:25:00-03:00: Phase 10 Pre-Deployment Audit (Aragorn)
+**By:** Aragorn
+
+#### 1. Web App Deployment Status — ❌ NEVER DEPLOYED
+
+**Finding: No Azure App Service (Web App) for `TravelRequestWF.Web` has ever been created or deployed to.**
+
+Evidence:
+- No deployment-related files found anywhere in the repository:
+  - `.github/workflows/` — contains ONLY squad management workflows (heartbeat, triage, issue-assign, label-sync). Zero CI/CD or Azure deploy workflows.
+  - No `azure-pipelines.yml`, no `Dockerfile`, no `azure.yaml` (AZD), no `*.bicep`, no ARM templates, no `.pubxml` publish profiles found anywhere.
+- Architecture reconciliation decision (2026-08-09T21:59:00) notes "Azure App Service as the deployment target" but explicitly defers: *"Deployment scripts/infra can be added later."*
+- Stage 1–9 history shows Jorgito manually created Azure SQL, Blob Storage account, and Function App resources — but NO mention of creating an App Service Plan or Web App resource.
+- `main` branch exists and is reserved for the CI/CD pipeline, but confirmed by Jorgito to have NO GitHub Actions workflow yet.
+
+**Conclusion: Creating the App Service (hosting plan + Web App resource) is 100% pending work. The Web app has never been deployed to Azure.**
+
+---
+
+#### 2. EF Core Migration State Audit
+
+**Migrations present in `src/TravelRequestWF.Infrastructure/Migrations/` (chronological order):**
+
+| # | Migration | Timestamp | Applied to LocalDB | Applied to Azure SQL |
+|---|-----------|-----------|-------------------|---------------------|
+| 1 | `InitialCreate` | 20260811002601 | ✅ Yes | ✅ **CONFIRMED** — Jorgito milestone entry 2026-08-10T22:03:59 explicitly states schema applied to Azure SQL |
+| 2 | `AuditLogDocumentLink` | 20260812013905 | ✅ Yes (Stage 2) | ⚠️ **NOT CONFIRMED** — no explicit Azure SQL apply recorded |
+| 3 | `RequestDocumentRestrictDelete` | 20260812014713 | ✅ Yes (Stage 2) | ⚠️ **NOT CONFIRMED** |
+| 4 | `AddIdentityTables` | 20260812021200 | ✅ Yes (Stage 3) | ⚠️ **NOT CONFIRMED** |
+| 5 | `Stage4WorkflowFields` | 20260812231909 | ✅ Yes (Stage 4) | ⚠️ **NOT CONFIRMED** |
+
+**Risk Assessment:** Azure SQL is confirmed at `InitialCreate` schema only. Migrations 2–5 add: `RequestDocumentId` FK on `AuditLogEntry`, restrict-delete on `RequestDocument`, ASP.NET Identity tables (`AspNetUsers`, `AspNetRoles`, etc.), and Stage 4 workflow fields (comments, returned-at, etc.). If the Web App were deployed pointing at the Azure SQL database today without running these 4 migrations, it would **crash on startup** (EF Core migration check) or at runtime (missing columns/tables).
+
+**Action required before Web App goes live:** Run `dotnet ef database update` targeting Azure SQL for all 4 pending migrations (or apply in sequence to confirm each one succeeds).
+
+---
+
+#### 3. Azure Functions Deployment Status — ✅ CONFIRMED LIVE
+
+Per Jorgito's direct confirmation and Phase 9 sync-triggers fix: Jorgito successfully ran `func azure functionapp publish <FunctionAppName> --dotnet-isolated` and synced triggers. The `DailyPendingReportFunction` IS deployed to the Azure Function App resource.
+
+**Remaining Functions action:** Set `PowerAutomate:FlowCDailyDigestUrl` in the Function App's Application Settings (Azure Portal) once Sam's Flow C URL is available. `SqlConnectionString` should already be set (required for triggers to sync).
+
+---
+
+#### 4. appsettings / Connection String Audit
+
+**`appsettings.json` (production baseline — used by Azure App Service when `ASPNETCORE_ENVIRONMENT` is not `Development`):**
+
+| Config Key | Current Value | Status |
+|---|---|---|
+| `ConnectionStrings:DefaultConnection` | `Server=<your-azure-sql-server>.database.windows.net;...` | ❌ PLACEHOLDER — app will crash on startup (DB context cannot connect) |
+| `AzureStorage:ConnectionString` | `"YOUR_AZURE_STORAGE_CONNECTION_STRING_HERE"` | ❌ PLACEHOLDER — file uploads will fail |
+| `AzureStorage:ContainerName` | `"travel-documents-prod"` | ✅ Correct for production |
+| `PowerAutomate:FlowASubmissionUrl` | `"PLACEHOLDER_SET_VIA_USER_SECRETS"` | ❌ PLACEHOLDER — submission emails will not be sent (guarded by PLACEHOLDER check, will log warning and continue — non-fatal) |
+| `PowerAutomate:FlowBStatusChangeUrl` | `"PLACEHOLDER_SET_VIA_USER_SECRETS"` | ❌ PLACEHOLDER — same as above |
+
+**`appsettings.Development.json` (local dev):**
+
+| Config Key | Value |
+|---|---|
+| `ConnectionStrings:DefaultConnection` | LocalDB — correct for dev |
+| `AzureStorage:ConnectionString` | Placeholder — Jorgito sets via user-secrets locally |
+| `PowerAutomate` URLs | Placeholder — Jorgito sets via user-secrets locally |
+
+**Conclusion:** The three critical production secrets (`DefaultConnection`, `AzureStorage:ConnectionString`, Flow A/B URLs) are all placeholders in committed config. This is correct practice (no secrets in git), but it means the Azure App Service will require **App Service Configuration > Application Settings** for all three before the app can function. This mirrors exactly what was done for the Function App.
+
+---
+
+#### 5. Phase 10 Checklist — Production Deployment
+
+```
+PHASE 10: PRODUCTION DEPLOYMENT CHECKLIST
+==========================================
+
+[ ] 1. CREATE Azure App Service infrastructure
+       - Create App Service Plan (e.g., B1 or F1 for PoC) in the same resource group
+       - Create Web App resource targeting .NET 10
+       Decision needed: Manual portal creation (Jorgito, same as SQL/Storage/Functions)
+       OR Bicep/ARM template (Merry/Gandalf can draft)
+
+[ ] 2. APPLY pending EF Core migrations to Azure SQL
+       Run from src/TravelRequestWF.Infrastructure or Web project:
+         dotnet ef database update --connection "<azure-sql-connection-string>"
+       Migrations to apply in order:
+         - AuditLogDocumentLink
+         - RequestDocumentRestrictDelete
+         - AddIdentityTables
+         - Stage4WorkflowFields
+
+[ ] 3. SET App Service Configuration (Application Settings) on the Web App
+       Required keys (mirrors Function App setup):
+         - ConnectionStrings:DefaultConnection  → real Azure SQL connection string
+         - AzureStorage:ConnectionString        → real Azure Storage connection string
+         - PowerAutomate:FlowASubmissionUrl     → real Flow A HTTP trigger URL
+         - PowerAutomate:FlowBStatusChangeUrl   → real Flow B HTTP trigger URL
+       (ASPNETCORE_ENVIRONMENT should be set to "Production" or left unset)
+
+[ ] 4. BUILD GitHub Actions CI/CD workflow on `main`
+       File: .github/workflows/deploy-web.yml
+       Triggers: push to main (or PR merge)
+       Steps: dotnet build → dotnet publish → Deploy to Azure App Service
+       Requires: AZURE_WEBAPP_PUBLISH_PROFILE secret in repo settings
+       (Gandalf + Aragorn to draft; Legolas to review frontend assets handling)
+
+[ ] 5. VERIFY Flow A / Flow B URLs in App Service Configuration
+       (These are already set as user-secrets locally — Jorgito has the real URLs)
+
+[ ] 6. SMOKE TEST the deployed Web App
+       - Login works (ASP.NET Identity seed data applied via IdentitySeeder.cs on startup)
+       - Employee can submit request (hits Azure SQL + Azure Blob Storage)
+       - Manager receives Flow A email notification (Power Automate Flow A)
+       - Manager can approve/reject (Flow B notification fires)
+       - Daily digest (Function App) runs on schedule or manual trigger
+
+[ ] 7. CONFIRM Flow C URL set in Function App Application Settings
+       (Pending Sam's Flow C build and URL retrieval)
+```
+
+**Open question for Jorgito:** Do you want to manually create the App Service resource in the Azure Portal (same pattern as SQL, Storage, Functions), or should Merry/Gandalf draft a Bicep template for it?
+
+---
+
 ### 2026-08-15T10:01:00-03:00: Phase 9 — Flow C Setup Guide Created (Sam)
 **By:** Sam
 
@@ -730,3 +853,34 @@ Root cause: Program.cs had eager throw on SqlConnectionString which crashed host
 **Action still required (production):**
 - Jorgito must set PowerAutomate:FlowCDailyDigestUrl in the Azure Function App's **Application Settings** (Azure Portal > Function App > Configuration) before the daily digest will work in production.
 - This mirrors the same process used for Flow A / Flow B URL secrets in Phase 5.
+
+
+---
+
+### 2026-08-15T11:32:00-03:00: Phase 10 — CI/CD Workflow for Web App (Merry)
+**By:** Merry
+
+#### What was done
+
+- Created `.github/workflows/deploy-web.yml` — GitHub Actions workflow that builds and deploys `TravelRequestWF.Web` to Azure App Service on every push to `main`.
+  - Trigger: `push` to `main`
+  - .NET SDK version: `10.0.x` (matches the Web project's `net10.0` TargetFramework)
+  - Steps: checkout → setup-dotnet@v4 → dotnet restore → dotnet build Release → dotnet publish → azure/webapps-deploy@v3
+  - App Service name sourced from repo Variable `AZURE_WEBAPP_NAME` (not hardcoded — Jorgito will set once he names the resource)
+  - Publish profile sourced from repo Secret `AZURE_WEBAPP_PUBLISH_PROFILE`
+
+- Created `.squad/files/phase10-web-deploy-workflow-setup.md` — plain-language setup guide covering: how to download the publish profile from the Azure Portal, how to add the repo secret and repo variable in GitHub Settings, and the pre-go-live checklist.
+
+#### Important: merging to `main`
+
+The workflow file was authored on `dev` (branch convention). **Jorgito must merge `dev` → `main` himself when ready to activate the pipeline.** Merry never touches `main` directly.
+
+#### Pending before pipeline can run
+
+- Jorgito creates the App Service resource in the Azure Portal and notes the exact resource name.
+- Sets repo Variable `AZURE_WEBAPP_NAME` = chosen App Service name.
+- Downloads the publish profile from the Portal ("Get publish profile" button on the App Service blade).
+- Sets repo Secret `AZURE_WEBAPP_PUBLISH_PROFILE` = full XML content of the publish profile.
+- Applies pending EF Core migrations to Azure SQL (Aragorn Phase 10 audit item #2).
+- Sets App Service Application Settings (connection strings, Power Automate URLs).
+
