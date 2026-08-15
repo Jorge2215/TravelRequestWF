@@ -2,6 +2,42 @@
 
 ## Active Decisions
 
+### 2026-08-15T19:33:00-03:00: Phase 10 — App Service Crash: Connection String Not Overriding (Gandalf)
+**By:** Gandalf
+
+#### Diagnosis
+
+Jorgito deployed `TravelRequestWF.Web` to Azure App Service. The app crashes on startup. Log Stream shows the **placeholder** values from `appsettings.json` being used (`<your-azure-sql-server>`, database `TravelRequestWFDb`) instead of the real Azure SQL credentials he set in the Portal.
+
+**Root cause (high confidence):** The App Service "Application settings" entries were named using **colon (`:`)** notation (e.g. `ConnectionStrings:DefaultConnection`) instead of **double-underscore (`__`)** notation (e.g. `ConnectionStrings__DefaultConnection`).
+
+ASP.NET Core's environment variable configuration provider maps `__` to the `:` hierarchy separator. A colon in an env var name is treated as a flat unrelated key — .NET never maps it to `ConnectionStrings:DefaultConnection`, so the app falls through to `appsettings.json` and reads the placeholder.
+
+The Phase 10 checklist in `.squad/files/phase10-web-deploy-workflow-setup.md` listed the keys using colon notation (correct as appsettings paths, but **wrong** as Portal "App settings" Names). This is what likely caused Jorgito to enter the colon form.
+
+#### Evidence
+- Log Stream shows `TravelRequestWFDb` (placeholder DB name) and `<your-azure-sql-server>` (placeholder server) — real DB is `TravelRequestDB`
+- `Program.cs` uses standard `builder.Configuration.GetConnectionString("DefaultConnection")` — runtime read, no code bug
+- `appsettings.json` `ConnectionStrings:DefaultConnection` value is confirmed placeholder
+
+#### Action Required (Jorgito)
+See `.squad/files/phase10-connection-string-troubleshooting.md` for exact Portal steps. Short version:
+
+- Azure Portal → App Service → Settings → Environment variables → **App settings tab**
+- Rename each entry: replace colons with double underscores:
+  - `ConnectionStrings__DefaultConnection`
+  - `AzureStorage__ConnectionString`
+  - `PowerAutomate__FlowASubmissionUrl`
+  - `PowerAutomate__FlowBStatusChangeUrl`
+- Click Save → App Service restarts → crash resolved
+
+Alternative for SQL only: use the dedicated "Connection strings" tab, Name=`DefaultConnection`, Type=`SQLAzure`.
+
+#### No Code Changes Made
+This is purely a Portal configuration naming mistake. `Program.cs`, `appsettings.json`, and all services are correct.
+
+---
+
 ### 2026-08-15T11:25:00-03:00: Phase 10 Pre-Deployment Audit (Aragorn)
 **By:** Aragorn
 
@@ -884,3 +920,53 @@ The workflow file was authored on `dev` (branch convention). **Jorgito must merg
 - Applies pending EF Core migrations to Azure SQL (Aragorn Phase 10 audit item #2).
 - Sets App Service Application Settings (connection strings, Power Automate URLs).
 
+
+
+---
+
+### 2026-08-15T11:37:00-03:00: Phase 10 — Azure SQL Migration Attempt (Gandalf)
+**By:** Gandalf
+
+**What was attempted:**
+- Azure SQL connection string set as user-secret (ConnectionStrings:DefaultConnection) for TravelRequestWF.Web — stored in OS user-secrets store, NOT committed to any file.
+- Ran dotnet ef migrations list and dotnet ef database update from repo root with --project src/TravelRequestWF.Infrastructure --startup-project src/TravelRequestWF.Web --framework net10.0.
+- EF Core tools correctly resolved the Azure SQL connection string from user-secrets (confirmed: error was SQL firewall, not a config/auth issue).
+
+**Blocker — Azure SQL Firewall:**
+- This machine's outbound IP (190.195.150.164) is not whitelisted on zure-sql-pampa.database.windows.net.
+- Error: Cannot open server 'azure-sql-pampa' requested by the login. Client with IP address '190.195.150.164' is not allowed to access the server.
+
+**Migrations that need to be applied (all 5, in order):**
+1. 20260811002601_InitialCreate
+2. 20260812013905_AuditLogDocumentLink
+3. 20260812014713_RequestDocumentRestrictDelete
+4. 20260812021200_AddIdentityTables
+5. 20260812231909_Stage4WorkflowFields
+
+**Action required by Jorgito:**
+- Go to Azure Portal → SQL Server zure-sql-pampa → Networking/Firewall rules → add IP 190.195.150.164 (or "Add your client IP").
+- Once IP is whitelisted, re-run: dotnet ef database update --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0 from repo root (user-secret is already set).
+- Alternatively, Jorgito can run the migration from his own machine after setting the same user-secret there.
+
+**No secrets committed.** User-secrets are OS-level and gitignored by design.
+
+
+---
+
+### 2026-08-15T11:52:00-03:00: Phase 10 — Azure SQL Migrations Successfully Applied (Gandalf)
+**By:** Gandalf
+
+**Result: SUCCESS — 0 pending migrations remain.**
+
+After Jorgito whitelisted this machine's IP on the Azure SQL firewall, the following 4 previously-pending migrations were applied to TravelRequestDB on zure-sql-pampa.database.windows.net:
+
+1. 20260812013905_AuditLogDocumentLink — AuditLogEntries: TravelRequestId made nullable, RequestDocumentId FK added, FKs changed to NO ACTION.
+2. 20260812014713_RequestDocumentRestrictDelete — RequestDocuments FK to TravelRequests changed to NO ACTION (Restrict).
+3. 20260812021200_AddIdentityTables — ASP.NET Identity tables created (AspNetUsers, AspNetRoles, AspNetUserRoles, AspNetUserClaims, AspNetUserLogins, AspNetUserTokens, AspNetRoleClaims). AspNetUsers linked to Employees via EmployeeId FK.
+4. 20260812231909_Stage4WorkflowFields — TravelRequests.SubmittedAt column added; AuditLogEntries.Details column added.
+
+InitialCreate was already present in Azure SQL from prior provisioning.
+
+Post-apply migrations list confirmed: all 5 migrations applied, none pending.
+
+Connection string was supplied via .NET user-secrets (never committed). No tracked files were modified.

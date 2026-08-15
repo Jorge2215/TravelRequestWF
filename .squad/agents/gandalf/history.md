@@ -246,3 +246,75 @@ EventType values by method:
 **Lesson — Fail-fast before expensive I/O:** Always validate inputs before touching external resources (blob storage, DBs). Running validation as the first line of the service method is cheaper, cleaner, and avoids partial state (e.g., a DB record created but blob upload rejected mid-loop).
 
 **Lesson — Check existing error handling before adding it:** Submit.cshtml.cs already caught InvalidOperationException — reading the PageModel before implementing saved unnecessary code duplication.
+
+
+### 2026-08-15T11:37:00-03:00 — Phase 10: Azure SQL Migration Attempt (Firewall Blocked)
+
+**Task:** Apply all pending EF Core migrations to Azure SQL (TravelRequestDB on azure-sql-pampa.database.windows.net).
+
+**What was done:**
+- Set ConnectionStrings:DefaultConnection as a .NET user-secret for TravelRequestWF.Web — confirmed via dotnet user-secrets set success message.
+- Ran dotnet ef migrations list --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0 — build succeeded; EF reached Azure SQL but got a transient error (firewall) before it could read the __EFMigrationsHistory table.
+- Ran dotnet ef database update — same outcome: EF correctly resolved the user-secret connection string and attempted to connect; blocked by Azure SQL firewall (IP 190.195.150.164 not whitelisted).
+
+**Migrations that need to be applied (all 5, created vs. LocalDB, never applied to Azure SQL):**
+1. 20260811002601_InitialCreate
+2. 20260812013905_AuditLogDocumentLink
+3. 20260812014713_RequestDocumentRestrictDelete
+4. 20260812021200_AddIdentityTables
+5. 20260812231909_Stage4WorkflowFields
+
+**Command convention confirmed:**
+dotnet ef <command> --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0
+(The --framework net10.0 flag is required because Infrastructure targets multiple frameworks.)
+
+**Blocker:** Azure SQL server firewall. Must whitelist this machine's IP in Azure Portal before migrations can be applied.
+
+**Lesson:** User-secrets are picked up automatically by EF Core tools when --startup-project points to the Web project — no --connection flag needed, no code changes needed. The design-time config chain (Web project CreateBuilder → user-secrets) works end-to-end.
+
+**No secrets stored in any tracked file.**
+
+
+### 2026-08-15T11:52:00-03:00 — Phase 10: Azure SQL Migrations Applied Successfully
+
+After Jorgito whitelisted IP 190.195.150.164 on the Azure SQL firewall, all pending migrations were applied cleanly.
+
+**migrations list before update showed:**
+- InitialCreate — already applied
+- AuditLogDocumentLink — **(Pending)**
+- RequestDocumentRestrictDelete — **(Pending)**
+- AddIdentityTables — **(Pending)**
+- Stage4WorkflowFields — **(Pending)**
+
+**database update applied all 4 in order. migrations list after: 0 pending.**
+
+**Command used:**
+dotnet ef database update --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0
+
+Connection string was read automatically from user-secrets. No --connection flag required.
+
+### 2026-08-15T19:33:00-03:00 — Phase 10: App Service Crash — Connection String Not Overriding appsettings.json
+
+**Symptom:** App deployed successfully to Azure App Service but crashed on startup. Log Stream showed placeholder values (`<your-azure-sql-server>`, `TravelRequestWFDb`) from `appsettings.json` — confirming that App Service environment variables were NOT overriding the committed placeholder.
+
+**Root cause (high confidence):** Azure App Service "Application settings" entries were named with **colon (`:`)** notation (e.g. `ConnectionStrings:DefaultConnection`) instead of the required **double-underscore (`__`)** notation (`ConnectionStrings__DefaultConnection`).
+
+**Why:** ASP.NET Core's `EnvironmentVariablesConfigurationProvider` maps `__` to `:` as the hierarchy separator. A literal `:` in an env var name is treated as a flat unknown key — it never maps to the nested `ConnectionStrings:DefaultConnection` path. App falls through to `appsettings.json` and reads the placeholder.
+
+**Contributing factor:** The Phase 10 checklist (`.squad/files/phase10-web-deploy-workflow-setup.md`) listed the config keys using colon notation — correct as appsettings.json paths, but misleading as Azure Portal "App settings" Name field values. Jorgito likely copy-pasted those names verbatim.
+
+**No code bug.** `Program.cs` uses `builder.Configuration.GetConnectionString("DefaultConnection")` — correct, standard, runtime-read pattern.
+
+**Fix:** Rename all four App settings entries with double-underscore:
+- `ConnectionStrings__DefaultConnection`
+- `AzureStorage__ConnectionString`
+- `PowerAutomate__FlowASubmissionUrl`
+- `PowerAutomate__FlowBStatusChangeUrl`
+
+Save → auto-restart → crash resolved. Full steps in `.squad/files/phase10-connection-string-troubleshooting.md`.
+
+**Lesson (Azure App Service + ASP.NET Core):**
+- When setting App Service Application settings for nested config keys, **always use `__` (double underscore) as the hierarchy separator, never `:` (colon)**.
+- The dedicated "Connection strings" tab is an alternative for SQL only — Azure automatically maps those into the `ConnectionStrings:` section with no prefix needed.
+- Any checklist or documentation that lists config paths as Portal names must explicitly state `__` vs `:` — colon notation is correct for code/appsettings, but wrong for Portal env var Name fields.
+- Always verify the actual env var names in the Portal when diagnosing config-not-overriding bugs in Azure App Service. The log message showing placeholder values is the definitive proof the override failed.
