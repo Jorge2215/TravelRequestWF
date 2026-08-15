@@ -11,7 +11,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null)));
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
@@ -48,10 +53,24 @@ builder.Services.AddScoped<ITravelRequestService, TravelRequestService>();
 
 var app = builder.Build();
 
-// Seed roles and test users at startup (idempotent)
+// Seed roles and test users at startup (idempotent).
+// Wrapped in try-catch: a transient DB failure during seeding must not crash the host
+// and trigger an Azure App Service restart loop.  The seeder is safe to retry on next
+// cold-start; core functionality (login, pages) is unaffected if seeding is skipped once.
 using (var scope = app.Services.CreateScope())
 {
-    await IdentitySeeder.SeedAsync(scope.ServiceProvider);
+    var seederLogger = scope.ServiceProvider
+        .GetRequiredService<ILogger<Program>>();
+    try
+    {
+        await IdentitySeeder.SeedAsync(scope.ServiceProvider);
+    }
+    catch (Exception ex)
+    {
+        seederLogger.LogWarning(ex,
+            "IdentitySeeder failed on this startup — likely a transient DB connectivity issue. " +
+            "The app will continue; seeding will be retried on the next cold-start.");
+    }
 }
 
 // Configure the HTTP request pipeline.

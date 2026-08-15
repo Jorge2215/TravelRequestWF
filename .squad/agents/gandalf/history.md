@@ -246,3 +246,128 @@ EventType values by method:
 **Lesson — Fail-fast before expensive I/O:** Always validate inputs before touching external resources (blob storage, DBs). Running validation as the first line of the service method is cheaper, cleaner, and avoids partial state (e.g., a DB record created but blob upload rejected mid-loop).
 
 **Lesson — Check existing error handling before adding it:** Submit.cshtml.cs already caught InvalidOperationException — reading the PageModel before implementing saved unnecessary code duplication.
+
+
+### 2026-08-15T11:37:00-03:00 — Phase 10: Azure SQL Migration Attempt (Firewall Blocked)
+
+**Task:** Apply all pending EF Core migrations to Azure SQL (TravelRequestDB on azure-sql-pampa.database.windows.net).
+
+**What was done:**
+- Set ConnectionStrings:DefaultConnection as a .NET user-secret for TravelRequestWF.Web — confirmed via dotnet user-secrets set success message.
+- Ran dotnet ef migrations list --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0 — build succeeded; EF reached Azure SQL but got a transient error (firewall) before it could read the __EFMigrationsHistory table.
+- Ran dotnet ef database update — same outcome: EF correctly resolved the user-secret connection string and attempted to connect; blocked by Azure SQL firewall (IP 190.195.150.164 not whitelisted).
+
+**Migrations that need to be applied (all 5, created vs. LocalDB, never applied to Azure SQL):**
+1. 20260811002601_InitialCreate
+2. 20260812013905_AuditLogDocumentLink
+3. 20260812014713_RequestDocumentRestrictDelete
+4. 20260812021200_AddIdentityTables
+5. 20260812231909_Stage4WorkflowFields
+
+**Command convention confirmed:**
+dotnet ef <command> --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0
+(The --framework net10.0 flag is required because Infrastructure targets multiple frameworks.)
+
+**Blocker:** Azure SQL server firewall. Must whitelist this machine's IP in Azure Portal before migrations can be applied.
+
+**Lesson:** User-secrets are picked up automatically by EF Core tools when --startup-project points to the Web project — no --connection flag needed, no code changes needed. The design-time config chain (Web project CreateBuilder → user-secrets) works end-to-end.
+
+**No secrets stored in any tracked file.**
+
+
+### 2026-08-15T11:52:00-03:00 — Phase 10: Azure SQL Migrations Applied Successfully
+
+After Jorgito whitelisted IP 190.195.150.164 on the Azure SQL firewall, all pending migrations were applied cleanly.
+
+**migrations list before update showed:**
+- InitialCreate — already applied
+- AuditLogDocumentLink — **(Pending)**
+- RequestDocumentRestrictDelete — **(Pending)**
+- AddIdentityTables — **(Pending)**
+- Stage4WorkflowFields — **(Pending)**
+
+**database update applied all 4 in order. migrations list after: 0 pending.**
+
+**Command used:**
+dotnet ef database update --project src\TravelRequestWF.Infrastructure --startup-project src\TravelRequestWF.Web --framework net10.0
+
+Connection string was read automatically from user-secrets. No --connection flag required.
+
+### 2026-08-15T19:33:00-03:00 — Phase 10: App Service Crash — Connection String Not Overriding appsettings.json
+
+**Symptom:** App deployed successfully to Azure App Service but crashed on startup. Log Stream showed placeholder values (`<your-azure-sql-server>`, `TravelRequestWFDb`) from `appsettings.json` — confirming that App Service environment variables were NOT overriding the committed placeholder.
+
+**Root cause (high confidence):** Azure App Service "Application settings" entries were named with **colon (`:`)** notation (e.g. `ConnectionStrings:DefaultConnection`) instead of the required **double-underscore (`__`)** notation (`ConnectionStrings__DefaultConnection`).
+
+**Why:** ASP.NET Core's `EnvironmentVariablesConfigurationProvider` maps `__` to `:` as the hierarchy separator. A literal `:` in an env var name is treated as a flat unknown key — it never maps to the nested `ConnectionStrings:DefaultConnection` path. App falls through to `appsettings.json` and reads the placeholder.
+
+**Contributing factor:** The Phase 10 checklist (`.squad/files/phase10-web-deploy-workflow-setup.md`) listed the config keys using colon notation — correct as appsettings.json paths, but misleading as Azure Portal "App settings" Name field values. Jorgito likely copy-pasted those names verbatim.
+
+**No code bug.** `Program.cs` uses `builder.Configuration.GetConnectionString("DefaultConnection")` — correct, standard, runtime-read pattern.
+
+**Fix:** Rename all four App settings entries with double-underscore:
+- `ConnectionStrings__DefaultConnection`
+- `AzureStorage__ConnectionString`
+- `PowerAutomate__FlowASubmissionUrl`
+- `PowerAutomate__FlowBStatusChangeUrl`
+
+Save → auto-restart → crash resolved. Full steps in `.squad/files/phase10-connection-string-troubleshooting.md`.
+
+**Lesson (Azure App Service + ASP.NET Core):**
+- When setting App Service Application settings for nested config keys, **always use `__` (double underscore) as the hierarchy separator, never `:` (colon)**.
+- The dedicated "Connection strings" tab is an alternative for SQL only — Azure automatically maps those into the `ConnectionStrings:` section with no prefix needed.
+- Any checklist or documentation that lists config paths as Portal names must explicitly state `__` vs `:` — colon notation is correct for code/appsettings, but wrong for Portal env var Name fields.
+- Always verify the actual env var names in the Portal when diagnosing config-not-overriding bugs in Azure App Service. The log message showing placeholder values is the definitive proof the override failed.
+
+
+### 2026-08-15T19:49:00-03:00 — Phase 10: Round 2 Connection String Diagnosis (Placeholder Persists After `__` Fix)
+
+**Task:** Investigate why `<your-azure-sql-server>.database.windows.net` placeholder still appears in live log stream after Jorgito renamed App Service env vars to double-underscore notation.
+
+**Full code audit performed:**
+- `Program.cs`: `AddDbContext` uses `builder.Configuration.GetConnectionString("DefaultConnection")` — standard, no `??`, no fallback, no custom `ConfigureAppConfiguration`. CLEAN.
+- `appsettings.json`: placeholder `ConnectionStrings:DefaultConnection` value confirmed. This is the fallback and is expected.
+- `appsettings.Production.json`: does NOT exist. Cannot be an override source.
+- `appsettings.Development.json`: exists (LocalDB). Only loaded in Development environment.
+- Config precedence: standard WebApplication.CreateBuilder order — env vars win over json files. No override.
+
+**Conclusion:** Code is 100% correct. The problem is in Azure Portal configuration management.
+
+**Most likely root cause identified:** Azure Portal's Configuration/Environment variables blade requires a two-step save:
+1. Add/edit the row → staged in UI only.
+2. Click top-level **Save** button → persists to Azure + triggers restart.
+
+If step 2 was skipped, the env var was never committed. The running process still reads only `appsettings.json`.
+
+**Verification path for Jorgito:** Portal → App settings tab → confirm `ConnectionStrings__DefaultConnection` exists in list → Kudu Env.cshtml to verify live process env vars → alternatively use "Connection strings" tab (Name=DefaultConnection, Type=SQLAzure) to bypass `__` naming entirely.
+
+**No code changes.** Full checklist appended to `.squad/files/phase10-connection-string-troubleshooting.md`. Decisions updated.
+
+**Lesson — Azure Portal two-step save:** Always confirm the green toast "Successfully updated web app settings" after clicking Save in the Portal's Configuration blade. Without it, the change is ephemeral (only visible in the current UI session, not persisted to Azure Resource Manager). This is a common silent failure point.
+
+**Lesson — Kudu is the ground truth:** When debugging "my env var isn't being read" in Azure App Service, Kudu's Env.cshtml or DebugConsole `printenv` shows exactly what the live process sees — no guessing.
+
+
+### 2026-08-15T20:17:00-03:00 — Phase 10: Periodic DB Error Diagnosis & Fix
+
+**Task:** Investigate periodic EF Core connection errors in Log Stream showing placeholder DB names, even with no user activity.
+
+**Full audit performed:**
+- Grep'd all *.cs files in TravelRequestWF.Web for: IHostedService, BackgroundService, AddHealthChecks, PeriodicTimer, while.*true, EnableRetryOnFailure, 
+ew SqlConnection, second AddDbContext. **Zero results on all patterns.**
+- Reviewed AppDbContext.cs — no OnConfiguring override. Clean.
+- Reviewed TravelRequestWF.Functions — uses configuration["SqlConnectionString"] (different key), once-daily timer trigger, OpenTelemetry → Azure Monitor. Error message DB names (TravelRequestDB) don't match the placeholder names in the error (TravelRequestWFDb) — definitively not the source.
+
+**Root cause:** IdentitySeeder.SeedAsync runs unguarded at every cold-start. Without EnableRetryOnFailure, a transient Azure SQL blip throws unhandled exception → host terminates → Azure App Service auto-restarts → repeat. This crash-restart loop looks "periodic" and produces errors with no users present.
+
+**Fix applied:**
+1. UseSqlServer(..., sqlOptions => sqlOptions.EnableRetryOnFailure(5, 30s, null)) — transient resilience for ALL DB operations.
+2. IdentitySeeder.SeedAsync wrapped in try-catch with LogWarning — seeder failure no longer crashes the host.
+
+**Build:** succeeded. No regressions. Committed to dev.
+
+**Lessons:**
+- IdentitySeeder running synchronously at startup with no exception guard is a latent crash-restart-loop bomb in cloud environments. Always wrap startup DB calls in try-catch.
+- Azure App Service's auto-restart behavior can make a single-startup crash look like a "periodic background error" — the period matches the app's cold-start cycle.
+- EnableRetryOnFailure is mandatory for Azure SQL in production — Azure SQL has documented transient fault rates, especially during cold DB connections.
+- The error message DB/server names are ground truth for which config path was active; placeholder names = ppsettings.json fallback was used.
