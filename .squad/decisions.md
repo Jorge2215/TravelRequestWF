@@ -714,3 +714,19 @@ After publishing, set these Application Settings in the Azure Portal (Function A
 **By:** Merry
 
 Root cause: Program.cs had eager throw on SqlConnectionString which crashed host startup before sync triggers could enumerate functions. Fixed by deferring config lookup to DI factory overload. Added runtime guard in RunAsync. Build: 0 errors.
+
+---
+
+### 2026-08-15T11:14:00-03:00: Phase 9 — Flow C URL Configured Locally (Merry)
+**By:** Merry
+
+**What:** Jorgito provided the live HTTP trigger URL for Flow C ("Daily Pending Requests Digest"). The real URL has been written into src/TravelRequestWF.Functions/local.settings.json (gitignored) under the key PowerAutomate:FlowCDailyDigestUrl. The placeholder value PLACEHOLDER_FLOW_C_URL has been replaced with the real value — locally only.
+
+**Verification:**
+- local.settings.json is gitignored (confirmed via git check-ignore; git status shows zero changes to that file).
+- The real URL is NOT present in any git-tracked file, commit, or squad document.
+- The Web project (TravelRequestWF.Web) has no reference to FlowCDailyDigestUrl — Flow C is consumed exclusively by the Functions project. Confirmed by grep.
+
+**Action still required (production):**
+- Jorgito must set PowerAutomate:FlowCDailyDigestUrl in the Azure Function App's **Application Settings** (Azure Portal > Function App > Configuration) before the daily digest will work in production.
+- This mirrors the same process used for Flow A / Flow B URL secrets in Phase 5.

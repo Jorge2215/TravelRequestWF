@@ -106,6 +106,13 @@ pm install -g azure-functions-core-tools@4 --unsafe-perm true.
 - Function App name must be found via z functionapp list --output table (or Azure Portal) — never guess it.
 
 
+### 10. Flow C URL — local.settings.json update (Phase 9 follow-up)
+- Jorgito provided the live Power Automate HTTP trigger URL for Flow C.
+- Written into `local.settings.json` `Values["PowerAutomate:FlowCDailyDigestUrl"]` (gitignored file — confirmed via `git check-ignore`).
+- Key format used in code is `configuration["PowerAutomate:FlowCDailyDigestUrl"]` (colon-separated flat key in `local.settings.json` Values section) — this is correct for Azure Functions isolated worker; the host maps colon-separated keys directly.
+- The Web project has NO reference to this key — Flow C is consumed only by the Functions project.
+- **Production action required:** Azure Function App > Application Settings must have `PowerAutomate:FlowCDailyDigestUrl` set to the same URL before daily digests will run in Azure.
+
 ### 9. Sync Triggers BadRequest - Eager Config Throw at Host Startup
 - **Root cause pattern:** Any ?? throw or GetRequiredSection called at the top level of Program.cs (outside a factory lambda) executes at host startup. If the referenced config key is absent in Azure Application Settings, the worker crashes before sync triggers can enumerate functions -> BadRequest.
 - **Fix:** Use AddDbContext((serviceProvider, options) => { var cfg = serviceProvider.GetRequiredService<IConfiguration>(); ... }) factory overload so config resolution is deferred to first DI resolution (not host build time).
