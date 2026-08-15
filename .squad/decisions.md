@@ -2,6 +2,78 @@
 
 ## Active Decisions
 
+### 2026-08-14T23:50:00-03:00: Phase 8 — Daily Report Stub Implementation (Merry)
+**By:** Merry
+
+#### What was built
+
+- Created `src/TravelRequestWF.Functions/` — Azure Functions isolated worker project targeting `net8.0`.
+- Added Timer Trigger function `DailyPendingReportFunction` with NCRONTAB `0 0 8 * * *` (08:00 UTC daily).
+- Registered `AppDbContext` via `AddDbContext<AppDbContext>` in `FunctionsApplication` builder, reading `SqlConnectionString` from configuration.
+- `DailyPendingReportFunction.cs` queries `TravelRequests` where `Status == TravelRequestStatus.Pending`, includes `Employee` navigation property, and logs one structured `[DailyReport]` line per request (Id, Employee.Name, Employee.Email, Destination, StartDate, EndDate, Status, SubmittedAt) plus summary count.
+- `local.settings.json` created with placeholder `SqlConnectionString` — file is gitignored (caught by template's own `.gitignore` inside the Functions project directory).
+- Added `local.settings.json` entry to root `.gitignore` as belt-and-suspenders.
+- Full solution build: **0 errors** (6 pre-existing `Azure.Identity` vulnerability warnings — unrelated to this phase).
+
+#### Key packages (Functions project)
+| Package | Version |
+|---|---|
+| `Microsoft.Azure.Functions.Worker` | 2.52.0 (template default) |
+| `Microsoft.Azure.Functions.Worker.Extensions.Timer` | 4.3.1 |
+| `Microsoft.Azure.Functions.Worker.OpenTelemetry` | 1.2.0 (template default) |
+| `Azure.Monitor.OpenTelemetry.Exporter` | 1.7.0 (template default) |
+| `Microsoft.EntityFrameworkCore.SqlServer` | **8.0.10** (matched to net8.0) |
+
+#### Deviation: Infrastructure project multi-targeted
+**Decision:** Changed `TravelRequestWF.Infrastructure` from single `net10.0` to multi-target `net8.0;net10.0`.
+
+**Reason:** NuGet restore hard-blocks P2P references where the referenced project's TFM is higher than the referencing project's TFM (NU1201 error — not suppressible via `<NoWarn>`). `SkipGetTargetFrameworkProperties` does not bypass this at the restore stage.
+
+**Resolution:** Added conditional `ItemGroup` blocks to `TravelRequestWF.Infrastructure.csproj` — EF Core 10.0.10 + Identity 10.0.10 for `net10.0`, EF Core 8.0.10 + Identity 8.0.10 for `net8.0`. The Web project continues to consume the `net10.0` output; the Functions project consumes the `net8.0` output. EF Core migrations tooling (`ef` tool) still targets net10.0 (the first/primary target in `TargetFrameworks`). No schema changes required.
+
+#### Live execution testing deferred
+`func start` against the real Azure SQL database is deferred — see Pippin/user for testing once a connection string is configured in `local.settings.json`.
+
+
+
+#### Decisions
+
+1. **Target framework: .NET 8 isolated worker (not .NET 10)**
+   - Azure Functions runtime (v4) supports .NET 8 GA in isolated worker model. .NET 10 is not yet officially supported by the Azure Functions host runtime — using it risks `func start` startup failures and is not recommended for production use. The isolated worker model on .NET 8 is the stable, recommended path for all new Functions projects as of 2026. The tradeoff is explicit: this Functions project will target `net8.0` while the rest of the solution targets `net10.0`. The Infrastructure project (net10.0) can be referenced from a net8.0 project; EF Core and Azure SDK packages have net8.0 targets — no conflict. Review and upgrade the Functions project to .NET 10 once Azure Functions runtime officially announces support.
+
+2. **New project: `src/TravelRequestWF.Functions/`**
+   - Isolated worker model (`Microsoft.Azure.Functions.Worker`, `Microsoft.Azure.Functions.Worker.Extensions.Timer`, `Microsoft.Azure.Functions.Worker.ApplicationInsights`).
+   - Project reference to `TravelRequestWF.Infrastructure` to reuse `AppDbContext`, `TravelRequest` entity, and EF Core queries directly — no duplication.
+
+3. **Data access: project reference to Infrastructure**
+   - `AppDbContext` registered via `AddDbContext<AppDbContext>` in `HostBuilder.ConfigureServices`. The Functions project gets the same EF Core + SQL Server stack. This is a standard pattern — no conflict between a Functions project and a class library.
+
+4. **Connection string source**
+   - Local dev: `local.settings.json` (root of the Functions project), key `SqlConnectionString` under `Values`. **This file must be gitignored** — add `local.settings.json` to `.gitignore` (currently absent — Merry must add this entry).
+   - Azure deployment: Function App Configuration > Application Settings, key `SqlConnectionString` (set independently from the Web App's App Service Configuration).
+
+5. **Timer Trigger CRON (NCRONTAB): `0 0 8 * * *`**
+   - Six-part NCRONTAB (seconds minutes hours day month weekday). Fires at 08:00:00 UTC daily. Document timezone assumption in code comments — adjust hours offset if local timezone is required (e.g., UTC-3 → `0 0 11 * * *` for 8 AM Argentina time).
+
+6. **Report format: structured `ILogger` lines**
+   - `ILogger<DailyPendingReportFunction>` injected by the host. `logger.LogInformation(...)` emits to console when running locally via `func start` and is auto-collected by Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set in the Function App's configuration. No extra sink configuration needed.
+   - Output: a header line + one line per pending request (Id, Requester, Destination, TravelDate, SubmittedAt), plus a summary count. Format should use a consistent prefix (`[DailyReport]`) to enable filtering in App Insights queries.
+
+7. **Scope: explicit stub**
+   - No email/notification in this phase. Phase 5's Power Automate flows (Sam's domain) handle request-event webhooks — this daily digest is a separate concern that could be wired to an HTTP-triggered Flow or SendGrid in a future phase. The log output structure (one line per request) is designed to be trivially serializable to JSON for future consumption.
+
+8. **GitHub Actions: NOT modified in this phase**
+   - No deploy workflow changes. This phase delivers code + local `func start` validation only. Azure Functions deployment (new Function App resource, publish profile, GitHub Action step) is a future phase. Assumption: Jorgito agrees deployment is out of scope here.
+
+#### .gitignore addition required (Merry action)
+Add to `.gitignore`:
+```
+# Azure Functions local settings (contains secrets)
+local.settings.json
+```
+
+---
+
 ### 2026-08-14T23:35:00-03:00: Phase 7 — IAuditLogger Extraction (Gandalf)
 **By:** Gandalf
 

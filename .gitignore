@@ -95,3 +95,6 @@ coverage/
 .squad/.scratch/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+
+# Azure Functions local settings (contains secrets)
+local.settings.json

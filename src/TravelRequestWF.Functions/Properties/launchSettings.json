@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "TravelRequestWF.Functions": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7125",
+      "launchBrowser": false
+    }
+  }
+}
