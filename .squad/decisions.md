@@ -997,3 +997,28 @@ Connection string was supplied via .NET user-secrets (never committed). No track
 5. Manually restart after confirming save.
 
 **No code changes made.** Fix is entirely in Azure Portal.
+
+
+---
+
+### 2026-08-15T20:17:00-03:00: Phase 10 — Periodic DB Error Root Cause & Fix (Gandalf)
+**By:** Gandalf
+
+**Symptom:** Log Stream shows EF Core errors with placeholder DB TravelRequestWFDb / server <your-azure-sql-server> periodically, even with no users. Login/register works fine.
+
+**Audit findings:**
+- Web project has NO BackgroundService, NO IHostedService, NO health checks, NO timers, NO periodic loops, NO second AddDbContext, NO OnConfiguring override. Exactly one DB path.
+- Function App uses configuration["SqlConnectionString"] (different key), runs once daily at 08:00 UTC, and uses OpenTelemetry to Azure Monitor (not Log Stream). Its connection string references TravelRequestDB, not TravelRequestWFDb — so the Function App is NOT the source of this error.
+
+**Root cause identified: crash-restart loop triggered by IdentitySeeder.**
+- IdentitySeeder.SeedAsync runs at every cold-start (unconditionally, unguarded) and makes real DB calls.
+- Without EnableRetryOnFailure, a transient Azure SQL blip or a still-active placeholder string causes the seeder to throw → unhandled exception → ASP.NET Core host terminates → Azure App Service auto-restarts → seeder runs again → repeat.
+- This crash-restart loop produces "periodic" errors with no user involved.
+
+**Fix applied (Program.cs):**
+1. Added sqlOptions.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: 30s) to UseSqlServer — handles transient Azure SQL failures.
+2. Wrapped IdentitySeeder.SeedAsync call in try-catch → seeder failure now logs a Warning and lets the app continue instead of crashing the host. Breaks the crash-restart loop.
+
+**Build:** succeeded (0 errors). Committed and pushed to dev.
+
+**Verification:** After deploy, Log Stream should no longer show ail: EF Core errors. If it still shows TravelRequestWFDb, verify live env vars via Kudu Debug Console → printenv | grep -i connection.

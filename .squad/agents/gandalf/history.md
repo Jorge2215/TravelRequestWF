@@ -346,3 +346,28 @@ If step 2 was skipped, the env var was never committed. The running process stil
 **Lesson — Azure Portal two-step save:** Always confirm the green toast "Successfully updated web app settings" after clicking Save in the Portal's Configuration blade. Without it, the change is ephemeral (only visible in the current UI session, not persisted to Azure Resource Manager). This is a common silent failure point.
 
 **Lesson — Kudu is the ground truth:** When debugging "my env var isn't being read" in Azure App Service, Kudu's Env.cshtml or DebugConsole `printenv` shows exactly what the live process sees — no guessing.
+
+
+### 2026-08-15T20:17:00-03:00 — Phase 10: Periodic DB Error Diagnosis & Fix
+
+**Task:** Investigate periodic EF Core connection errors in Log Stream showing placeholder DB names, even with no user activity.
+
+**Full audit performed:**
+- Grep'd all *.cs files in TravelRequestWF.Web for: IHostedService, BackgroundService, AddHealthChecks, PeriodicTimer, while.*true, EnableRetryOnFailure, 
+ew SqlConnection, second AddDbContext. **Zero results on all patterns.**
+- Reviewed AppDbContext.cs — no OnConfiguring override. Clean.
+- Reviewed TravelRequestWF.Functions — uses configuration["SqlConnectionString"] (different key), once-daily timer trigger, OpenTelemetry → Azure Monitor. Error message DB names (TravelRequestDB) don't match the placeholder names in the error (TravelRequestWFDb) — definitively not the source.
+
+**Root cause:** IdentitySeeder.SeedAsync runs unguarded at every cold-start. Without EnableRetryOnFailure, a transient Azure SQL blip throws unhandled exception → host terminates → Azure App Service auto-restarts → repeat. This crash-restart loop looks "periodic" and produces errors with no users present.
+
+**Fix applied:**
+1. UseSqlServer(..., sqlOptions => sqlOptions.EnableRetryOnFailure(5, 30s, null)) — transient resilience for ALL DB operations.
+2. IdentitySeeder.SeedAsync wrapped in try-catch with LogWarning — seeder failure no longer crashes the host.
+
+**Build:** succeeded. No regressions. Committed to dev.
+
+**Lessons:**
+- IdentitySeeder running synchronously at startup with no exception guard is a latent crash-restart-loop bomb in cloud environments. Always wrap startup DB calls in try-catch.
+- Azure App Service's auto-restart behavior can make a single-startup crash look like a "periodic background error" — the period matches the app's cold-start cycle.
+- EnableRetryOnFailure is mandatory for Azure SQL in production — Azure SQL has documented transient fault rates, especially during cold DB connections.
+- The error message DB/server names are ground truth for which config path was active; placeholder names = ppsettings.json fallback was used.
