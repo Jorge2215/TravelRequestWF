@@ -2,6 +2,148 @@
 
 ## Active Decisions
 
+### 2026-08-15T10:01:00-03:00: Phase 9 — Flow C Setup Guide Created (Sam)
+**By:** Sam
+
+#### What was done
+
+- Created `.squad/files/phase9-flow-c-setup.md` — complete step-by-step build guide for Jorgito to create Flow C ("Daily Pending Requests Digest") in Power Automate, following the same style and format as the Phase 5 guide (`stage5-power-automate-setup.md`).
+
+#### Flow C JSON Schema Contract (for Pippin's reference when validation resumes)
+
+The Azure Function (Merry) POSTs this JSON shape to Flow C — one POST per manager per day:
+
+```json
+{
+  "ManagerName": "string",
+  "ManagerEmail": "string",
+  "PendingRequests": [
+    {
+      "RequestId": 1,
+      "EmployeeName": "string",
+      "Destination": "string",
+      "StartDate": "yyyy-MM-dd",
+      "EndDate": "yyyy-MM-dd",
+      "Status": "Pending"
+    }
+  ]
+}
+```
+
+**Key contract notes:**
+- All field names are **PascalCase** — case-sensitive in Power Automate schema.
+- `RequestId` is an **integer** (int PK from the database — consistent with Phase 5 convention where int PK was cast to string; in Phase 9 Merry sends it as integer directly per the schema — note the difference from Phase 5's string representation).
+- `PendingRequests` is an **array of objects** — the critical structural difference from Flow A/B (which had flat payloads). The HTTP trigger schema must be generated from the sample JSON so Power Automate recognises it as an array type.
+- `Status` will always be `"Pending"` in this digest context (only pending requests are included).
+- Config key for the flow URL: **`PowerAutomate:FlowCDailyDigestUrl`** (stored in `local.settings.json` / Azure Function App Configuration — never committed).
+
+---
+
+### 2026-08-15T09:57:00-03:00: Phase 9 — Daily Digest: Azure Function → Power Automate Integration
+**By:** Aragorn
+
+#### Context
+Phase 8 delivered `DailyPendingReportFunction` (Timer Trigger, `0 0 8 * * *`) as a pure logging stub. Phase 9 connects it to Power Automate to send per-manager daily digest emails, AND deploys the function code to the Azure Function App resource the user created manually (deployment was deferred from Phase 8).
+
+---
+
+#### Decision 1 — Trigger direction: PUSH (Option A chosen)
+
+**Chosen:** Option A — the Azure Function groups pending requests by manager and HTTP-POSTs a digest payload to a new Power Automate HTTP-triggered flow (Flow C: "Daily Pending Requests Digest"), one POST per manager per day.
+
+**Rejected:** Option B (Pull — Power Automate timer triggers back into an HTTP endpoint or queries SQL via Premium connector). Option B requires either a new HTTP-triggered Function (different trigger type, more infrastructure) or a Premium Power Automate connector license for direct SQL access. It also moves grouping/business logic into Power Automate expressions, which are harder to test and reason about than C# LINQ.
+
+**Justification for Option A:**
+- Exact same push-based HTTP trigger architecture as Phase 5 (Flow A / Flow B). The user already has this pattern working end-to-end and understands it.
+- Grouping, filtering, and manager-email resolution stays in C# (EF Core + LINQ) — testable, readable, type-safe.
+- Power Automate's job remains simple: receive a typed JSON payload, loop over an array, send one email. No expressions for SQL joins or HTTP callbacks.
+- Non-blocking try/catch-per-manager pattern (see Decision 5) means a single failing HTTP call does not affect other managers' digests.
+
+---
+
+#### Decision 2 — Grouping logic
+
+**Manager FK:** `TravelRequest.ApproverId` is the FK to `Employee` for the approver/manager. This is always set to `Employee.SuperiorId` at submission time (Stage 3 decision, Option A). So grouping by `ApproverId` groups by manager.
+
+**Manager email resolution:** `Employee.Email` is available directly on the `Employee` entity (same table). The query must `.Include(r => r.Approver)` on `TravelRequest` so that `r.Approver.Name` and `r.Approver.Email` are available without a second round-trip. This is the same EF Core include pattern already used for `r.Employee` in the current stub.
+
+**EF Core navigation name:** `TravelRequest` has an `ApprovalRequests` collection on `Employee` but the forward nav from `TravelRequest` to its approver may need to be confirmed or added. Check `AppDbContext` — if `TravelRequest.Approver` navigation is not already mapped, Merry must verify it. The FK `ApproverId` is confirmed present; EF Core convention should resolve `Approver` as the navigation property if it exists on the entity, or Merry must add it. Fallback: join in LINQ (`employees.Where(e => e.Id == group.Key)`) if the nav isn't mapped.
+
+**Query shape (pseudocode):**
+```csharp
+var pending = await _db.TravelRequests
+    .Where(r => r.Status == TravelRequestStatus.Pending)
+    .Include(r => r.Employee)
+    .Include(r => r.Approver)   // manager — verify nav property name
+    .ToListAsync(ct);
+
+var byManager = pending.GroupBy(r => r.ApproverId);
+
+foreach (var group in byManager)
+{
+    var manager = group.First().Approver;
+    // build payload and POST to Flow C
+}
+```
+
+**Skip empty:** groups with zero pending requests will never appear (GroupBy only yields groups with at least one element).
+
+---
+
+#### Decision 3 — Flow C configuration key
+
+- New config key: `PowerAutomate:FlowCDailyDigestUrl`
+- **Local dev (Functions project):** stored in `local.settings.json` under `Values` (same as `SqlConnectionString`). **NOT in `appsettings.json` or `local.settings.json` committed to git.** Placeholder value `"PLACEHOLDER_FLOW_C_URL"` added to committed config/documentation only.
+- **Azure deployment:** Function App Configuration > Application Settings, key `PowerAutomate:FlowCDailyDigestUrl`.
+- **User action required:** After Jorgito builds Flow C in Power Automate and receives the HTTP POST URL, he must:
+  1. Add it to local `local.settings.json` (`Values` section).
+  2. Add it to the Azure Function App's Application Settings in the Azure Portal.
+  - This mirrors the exact process used for Flow A / Flow B in Phase 5 (user-secrets / App Service config, never in git).
+
+---
+
+#### Decision 4 — Deployment: `func azure functionapp publish`
+
+- **Primary path:** Merry will add the `Microsoft.Azure.Functions.Worker.Sdk` publish target and attempt deployment via:
+  ```
+  func azure functionapp publish <FunctionAppName> --dotnet-isolated
+  ```
+  run from `src/TravelRequestWF.Functions/`.
+- **Prerequisites:** Azure Functions Core Tools (`func`) installed, `az login` authenticated, correct subscription set.
+- **If the machine lacks the tools or login:** Merry must document exactly what the user needs to run (the command above, with the correct app name) so Jorgito can execute it manually.
+- **GitHub Actions CI/CD for Functions:** explicitly OUT OF SCOPE for this phase. If the user wants an automated deploy pipeline for the Function, that is a future phase. Note in Merry's brief.
+- **Function App name:** not known at architecture-decision time — Merry must look it up from the user's Azure account (via `az functionapp list`) or ask the user.
+
+---
+
+#### Decision 5 — HTTP call reliability: non-blocking per-manager try/catch
+
+Each HTTP POST to Flow C is wrapped in its own `try/catch`, identical to `PowerAutomateNotificationService.PostToFlowAsync` in Phase 5:
+- `catch (Exception ex)` logs the error with `logger.LogError` and continues to the next manager.
+- A failed digest for manager X does NOT throw or abort digests for managers Y and Z.
+- If the Flow C URL is missing or starts with `PLACEHOLDER`, log and skip (same guard as Phase 5).
+- This pattern is already proven in `PowerAutomateNotificationService` — Merry copies it directly rather than inventing a new approach.
+
+---
+
+#### Decision 6 — Validation (Pippin) — deferred per user preference
+
+Pippin is NOT included in the immediate task list for Phase 9. Validation criteria for when Pippin is brought in:
+- Seed test data: at least 2 managers, each with ≥1 pending travel request.
+- Trigger the function manually (run-now via Azure portal or `func start` locally).
+- Confirm each manager receives exactly one email listing only their own pending requests.
+- Confirm a manager with zero pending requests receives no email.
+- Check Power Automate flow run history for Flow C: all runs should show green/succeeded.
+- Verify email content includes RequestId, EmployeeName, Destination, StartDate, EndDate, Status for each request in the digest.
+
+---
+
+#### Task briefs
+
+See below for Merry (Azure Functions) and Sam (Power Automate) briefs.
+
+---
+
 ### 2026-08-14T23:50:00-03:00: Phase 8 — Daily Report Stub Implementation (Merry)
 **By:** Merry
 
