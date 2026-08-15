@@ -44,7 +44,8 @@
 
     <div class="mb-3">
         <label asp-for="Documents" class="form-label">Supporting Documents (optional)</label>
-        <input asp-for="Documents" type="file" class="form-control" multiple />
+        <input asp-for="Documents" type="file" class="form-control" multiple accept=".pdf,.docx,.jpg,.jpeg,.png,.gif" />
+        <div class="form-text text-muted">Accepted file types: PDF, DOCX, JPG, PNG, GIF. Max 10 MB per file.</div>
     </div>
 
     <button type="submit" class="btn btn-primary">Submit Request</button>
