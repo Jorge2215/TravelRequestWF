@@ -2,7 +2,46 @@
 
 ## Active Decisions
 
-### 2026-08-15T19:33:00-03:00: Phase 10 — App Service Crash: Connection String Not Overriding (Gandalf)
+### 2026-08-15T20:40:00-03:00: Registration Fix — Always Create Linked Employee Record (Gandalf)
+**By:** Gandalf
+
+#### Root Cause
+Self-registered users via `/Account/Register` only got an `ApplicationUser` (Identity row) + "Employee" role assignment — but NO corresponding `Employee` entity row and NO `ApplicationUser.EmployeeId` link. When those users tried to Submit a travel request, `Submit.cshtml.cs` line 46 threw `InvalidOperationException: User not linked to Employee.`
+
+#### Fix Applied (Register.cshtml.cs + Register.cshtml)
+1. **Added `FullName` field** to `InputModel` — used as `Employee.Name`. Falls back to email prefix if blank.
+2. **Added `ManagerId` optional dropdown** to `InputModel` — populates from existing Manager-role users' `Employee` records.
+3. **`OnGetAsync` / `OnPostAsync`:** Load manager options via `_userManager.GetUsersInRoleAsync("Manager")` + EF join to `Employees`.
+4. **After `CreateAsync` succeeds:** Create `Employee` row (Name, Email, Department="General", SuperiorId=selected ManagerId or null), save, then set `user.EmployeeId = employee.Id` and `UpdateAsync`. Atomic enough — if Employee creation fails, the user exists but has no EmployeeId (same broken state as before, but exception propagates to user vs. silent). The Employee row is created in the same request scope.
+5. **Edge case — no managers yet:** Dropdown replaced with a plain-text note; `SuperiorId` stays null. User can still register. Submit will fail with "No approver assigned" error from `TravelRequestService` — but that's a soft, catchable error displayed on the page (not a crash), which is acceptable.
+6. **Build:** 0 errors (only pre-existing Azure.Identity NuGet vulnerability warnings, unrelated).
+
+#### Manual SQL Repair for Jorgito's Existing Broken Account
+`jvilaboa@gmail.com` was registered before this fix. Run this against Azure SQL:
+
+```sql
+-- Step 1: Insert Employee row for jvilaboa@gmail.com
+-- Replace <MANAGER_EMPLOYEE_ID> with the Id of your manager from the Employees table.
+-- To find available managers: SELECT e.Id, e.Name FROM Employees e
+--   JOIN AspNetUsers u ON u.EmployeeId = e.Id
+--   JOIN AspNetUserRoles ur ON ur.UserId = u.Id
+--   JOIN AspNetRoles r ON r.Id = ur.RoleId
+--   WHERE r.Name = 'Manager';
+
+INSERT INTO Employees (Name, Email, Department, SuperiorId)
+VALUES ('Jorge Vilaboa', 'jvilaboa@gmail.com', 'General', <MANAGER_EMPLOYEE_ID>);
+
+-- Step 2: Link the new Employee row to the ApplicationUser
+UPDATE AspNetUsers
+SET EmployeeId = SCOPE_IDENTITY()
+WHERE Email = 'jvilaboa@gmail.com';
+```
+
+> **Note:** Replace `<MANAGER_EMPLOYEE_ID>` with the `Id` of one of the seeded managers (e.g., Carol White or David Brown). Run in the same transaction or use `SCOPE_IDENTITY()` immediately after the INSERT as shown.
+
+---
+
+
 **By:** Gandalf
 
 #### Diagnosis
