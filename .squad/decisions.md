@@ -709,3 +709,8 @@ After publishing, set these Application Settings in the Azure Portal (Function A
 - SqlConnectionString — same Azure SQL connection string as the Web App.
 - PowerAutomate:FlowCDailyDigestUrl — replace with real Flow C URL once Sam builds it.
 - APPLICATIONINSIGHTS_CONNECTION_STRING — should be auto-set if App Insights is linked; verify.
+
+### 2026-08-15T13:30:00-03:00: Phase 9 - Sync Triggers BadRequest Root Cause + Fix
+**By:** Merry
+
+Root cause: Program.cs had eager throw on SqlConnectionString which crashed host startup before sync triggers could enumerate functions. Fixed by deferring config lookup to DI factory overload. Added runtime guard in RunAsync. Build: 0 errors.

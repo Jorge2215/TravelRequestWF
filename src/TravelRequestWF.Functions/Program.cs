@@ -3,6 +3,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenTelemetry;
@@ -16,12 +17,17 @@ builder.Services.AddOpenTelemetry()
     .UseFunctionsWorkerDefaults()
     .UseAzureMonitorExporter();
 
-var connectionString = builder.Configuration["SqlConnectionString"]
-    ?? throw new InvalidOperationException("SqlConnectionString is not configured. Set it in local.settings.json (local) or Application Settings (Azure).");
-
 builder.Services.AddHttpClient();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+// Defer SqlConnectionString resolution to first use so a missing/placeholder value
+// does NOT crash the host at startup (which would cause "sync triggers BadRequest"
+// during `func azure functionapp publish`).  The function body logs a warning and
+// short-circuits gracefully when the value is absent.
+builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
+{
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var connectionString = configuration["SqlConnectionString"] ?? string.Empty;
+    options.UseSqlServer(connectionString);
+});
 
 builder.Build().Run();

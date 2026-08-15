@@ -104,3 +104,10 @@
 - If unc is not installed, document the install command: 
 pm install -g azure-functions-core-tools@4 --unsafe-perm true.
 - Function App name must be found via z functionapp list --output table (or Azure Portal) — never guess it.
+
+
+### 9. Sync Triggers BadRequest - Eager Config Throw at Host Startup
+- **Root cause pattern:** Any ?? throw or GetRequiredSection called at the top level of Program.cs (outside a factory lambda) executes at host startup. If the referenced config key is absent in Azure Application Settings, the worker crashes before sync triggers can enumerate functions -> BadRequest.
+- **Fix:** Use AddDbContext((serviceProvider, options) => { var cfg = serviceProvider.GetRequiredService<IConfiguration>(); ... }) factory overload so config resolution is deferred to first DI resolution (not host build time).
+- **Runtime guard pattern:** Store config values as fields in the constructor (null-safe). At the top of the function method body, check for empty/placeholder values and LogWarning + eturn early. Never let missing config throw an unhandled exception from within a timer trigger body.
+- **Ordering gotcha:** unc azure functionapp publish runs 'sync triggers' as part of the publish flow. This step requires the worker process to start cleanly. If Application Settings are set AFTER publish, but the code needs them at startup, the sequence is wrong. Always either (a) set Application Settings first, then publish; or (b) make the host startup null-safe (preferred) so order doesn't matter.

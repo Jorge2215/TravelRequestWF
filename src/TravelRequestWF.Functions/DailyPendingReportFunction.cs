@@ -15,6 +15,7 @@ public class DailyPendingReportFunction
     private readonly ILogger<DailyPendingReportFunction> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _flowCUrl;
+    private readonly string _sqlConnectionString;
 
     public DailyPendingReportFunction(
         AppDbContext db,
@@ -26,6 +27,7 @@ public class DailyPendingReportFunction
         _logger = logger;
         _httpClientFactory = httpClientFactory;
         _flowCUrl = configuration["PowerAutomate:FlowCDailyDigestUrl"] ?? string.Empty;
+        _sqlConnectionString = configuration["SqlConnectionString"] ?? string.Empty;
     }
 
     // NCRONTAB six-part format: {seconds} {minutes} {hours} {day} {month} {weekday}
@@ -38,6 +40,12 @@ public class DailyPendingReportFunction
     {
         var utcNow = DateTime.UtcNow;
         _logger.LogInformation("[DailyReport] Starting daily pending travel requests digest. UTC: {UtcNow}", utcNow);
+
+        if (string.IsNullOrWhiteSpace(_sqlConnectionString))
+        {
+            _logger.LogWarning("[DailyReport] SqlConnectionString is not configured. Set it in Azure Portal → Function App → Configuration → Application settings, then re-publish. Skipping run.");
+            return;
+        }
 
         var pending = await _db.TravelRequests
             .Where(r => r.Status == TravelRequestStatus.Pending)
