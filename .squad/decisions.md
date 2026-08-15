@@ -970,3 +970,30 @@ InitialCreate was already present in Azure SQL from prior provisioning.
 Post-apply migrations list confirmed: all 5 migrations applied, none pending.
 
 Connection string was supplied via .NET user-secrets (never committed). No tracked files were modified.
+
+
+---
+
+### 2026-08-15T19:49:00-03:00: Phase 10 — Round 2: Double-Underscore Fix Did Not Resolve Placeholder (Gandalf)
+**By:** Gandalf
+
+**Symptom:** After renaming App Service env vars to `__` notation and restarting, log stream still shows `<your-azure-sql-server>.database.windows.net` and `TravelRequestWFDb` as the live runtime server/database names. Placeholder is still being used.
+
+**Code re-audit result — NO BUG FOUND:**
+- `Program.cs` uses standard `builder.Configuration.GetConnectionString("DefaultConnection")` — no `??` fallback, no hardcoded string, no custom config precedence override.
+- No `appsettings.Production.json` exists — cannot be the override source.
+- Only `appsettings.json` (placeholder) and `appsettings.Development.json` exist.
+- ASP.NET Core default config precedence is correct: env vars win over json files.
+
+**Why placeholder in the error message is conclusive:** EF Core embeds the actual `SqlConnection.DataSource` and `.Database` properties in its error message — not a template. Seeing the literal `<your-azure-sql-server>` text proves the running process received that string as the connection string value.
+
+**Most likely root cause:** Azure Portal two-step save was NOT completed. Adding/editing an env var row in the Portal only stages it in the UI list. The page-level **Save** button must be clicked separately, followed by a confirmation dialog, for the change to be committed and the App Service to restart. If that final Save was skipped, nothing persisted to Azure.
+
+**Prioritized checklist for Jorgito (in `.squad/files/phase10-connection-string-troubleshooting.md`):**
+1. Verify `ConnectionStrings__DefaultConnection` exists in Portal App settings list with the real value — if missing, save was never completed.
+2. Check Kudu Env.cshtml to see what the live process actually sees.
+3. Use the Portal "Connection strings" tab as an alternative (Name=DefaultConnection, Type=SQLAzure) — avoids `__` naming entirely.
+4. Remove any leftover colon-named entries.
+5. Manually restart after confirming save.
+
+**No code changes made.** Fix is entirely in Azure Portal.

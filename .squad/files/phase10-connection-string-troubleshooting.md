@@ -134,3 +134,111 @@ These are the correct **appsettings.json paths** but are **NOT** the correct nam
 ---
 
 *Gandalf — 2026-08-15 | Phase 10 connection string fix*
+
+
+---
+
+## Round 2 — Double-Underscore Applied But Placeholder STILL Appears (2026-08-15)
+
+**Symptom:** Jorgito renamed env vars to double-underscore notation AND restarted/redeployed. Log stream still shows `<your-azure-sql-server>.database.windows.net` and `TravelRequestWFDb` as the actual server/database names in the EF Core error.
+
+**Code verdict (re-confirmed):** `Program.cs` is clean — `builder.Configuration.GetConnectionString("DefaultConnection")` with no fallback, no `??` coalescing, no custom `ConfigureAppConfiguration` altering precedence. No `appsettings.Production.json`. No bug in code. This is a Portal/infra issue.
+
+**Why the placeholder string in the error IS conclusive proof:** EF Core's connection error message embeds `connection.DataSource` and `connection.Database` from the actual live `SqlConnection` object at runtime — not from any static template. The literal `<your-azure-sql-server>` text in the log stream means the running process genuinely received that string as its connection string. The env var override definitively did NOT take effect.
+
+---
+
+## Prioritized Checklist for Jorgito (Most Likely First)
+
+### 🥇 #1 — DID YOU CLICK THE FINAL "SAVE" BUTTON? (Most Likely Root Cause)
+
+Azure Portal's Environment Variables / Configuration blade has a **two-step save** process:
+1. You add/edit an entry — this only stages the change in the list UI.
+2. You MUST click the **"Save"** button at the **top of the page** (blue button, usually top-left of the blade).
+3. A confirmation dialog may appear — click **"Continue"** / **"OK"**.
+4. A green toast notification should appear: "Successfully updated web app settings."
+5. The App Service automatically restarts after a successful save.
+
+**If you skipped step 2, nothing was persisted to Azure — the env var was never set.**
+
+Verify: Go to Portal → App Service → Environment variables → App settings tab → look for `ConnectionStrings__DefaultConnection` in the list. If it's there, the value should be your real connection string (click the eye/value field to reveal). If it's NOT there, the save was never completed.
+
+---
+
+### 🥈 #2 — Verify the Exact Name Spelling in the Portal List
+
+The name must be **exactly**: `ConnectionStrings__DefaultConnection`
+- Two underscores (`__`), not one (`_`) and not a colon (`:`)
+- Capital `C`, capital `S`, capital `D`, capital `C` — case-sensitive on Linux-hosted App Services
+- No leading/trailing spaces (easy to accidentally paste one)
+
+Go to Portal → App Service → **Environment variables** → **App settings** tab → find the entry and click the pencil (Edit) icon to see the exact Name field value character by character.
+
+---
+
+### 🥉 #3 — Use Kudu to Verify What the Running Process Actually Sees
+
+Navigate to: `https://<your-app-name>.scm.azurewebsites.net/Env.cshtml`
+
+This shows all environment variables as the live running process sees them. Search the page for `ConnectionStrings`. If `ConnectionStrings__DefaultConnection` appears there with your real value, the env var is set correctly and the problem is something else. If it shows the placeholder or doesn't appear at all, the Portal save did not persist.
+
+Alternative Kudu path: `https://<your-app-name>.scm.azurewebsites.net/DebugConsole` → run `echo %ConnectionStrings__DefaultConnection%` (Windows sandbox) or `printenv ConnectionStrings__DefaultConnection` (Linux).
+
+---
+
+### #4 — Clean Up: Check for Leftover Colon-Named Entries
+
+If Jorgito added the new `__` entries AND kept the old `:` entries (both present), the `:` entries are harmless (they map to an unknown flat key, not `ConnectionStrings:DefaultConnection`), but they're confusing. Remove them to keep settings clean.
+
+Portal → App Service → Environment variables → App settings → look for any entry with a colon in the name (e.g., `ConnectionStrings:DefaultConnection`) → delete it.
+
+---
+
+### #5 — Confirm App Service Actually Restarted After the Save
+
+A successful save auto-restarts the App Service. But if Jorgito manually restarted BEFORE saving (or if the save failed silently), the process may have restarted without the new env vars.
+
+After confirming the save: Portal → App Service → **Overview** → click **Restart** once more → wait ~60 seconds → check Log Stream again.
+
+---
+
+### #6 — Remote Possibility: Wrong Deployment Slot
+
+If the App Service has multiple deployment slots (e.g., "production" slot and a "staging" slot), each slot has its OWN independent set of environment variables. Editing "staging" slot settings while the live traffic runs on "production" slot would produce exactly this symptom.
+
+Check: Portal → App Service → Deployment → Deployment slots. If only one slot exists (the default), this is NOT the issue.
+
+---
+
+### #7 — Alternate Fix Path: Use the "Connection strings" Tab Instead
+
+The Azure Portal's Configuration blade has TWO tabs:
+- **App settings** — for general env vars; requires `__` notation for hierarchy
+- **Connection strings** — specifically for SQL; Azure automatically maps these into `ConnectionStrings:*` without needing the `__` prefix
+
+As an alternative to the `__` env var approach, Jorgito can:
+1. Go to Portal → App Service → Environment variables → **Connection strings** tab
+2. Add entry: Name = `DefaultConnection`, Value = `<real connection string>`, Type = `SQLAzure`
+3. Click Save → confirm → restart
+4. This bypasses the `__` naming entirely and will definitely override `appsettings.json`
+
+---
+
+## Code Confirmation (No Code Bug Found)
+
+`Program.cs` — `AddDbContext` call:
+```csharp
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+```
+- Standard `IConfiguration.GetConnectionString("DefaultConnection")` — reads from `ConnectionStrings:DefaultConnection` at runtime.
+- No `??` fallback, no hardcoded placeholder in C# code.
+- No custom `ConfigureAppConfiguration` that would change env var precedence.
+- No `appsettings.Production.json` that could win over env vars.
+- ASP.NET Core default precedence: appsettings.json → appsettings.{Env}.json → **env vars** → cmd args. Env vars WIN over json files in standard setup. Code is correct.
+
+**Conclusion: Fix is 100% in Azure Portal, not in code.**
+
+---
+
+*Gandalf — 2026-08-15 | Phase 10 Round 2 deeper diagnosis*

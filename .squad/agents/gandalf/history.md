@@ -318,3 +318,31 @@ Save → auto-restart → crash resolved. Full steps in `.squad/files/phase10-co
 - The dedicated "Connection strings" tab is an alternative for SQL only — Azure automatically maps those into the `ConnectionStrings:` section with no prefix needed.
 - Any checklist or documentation that lists config paths as Portal names must explicitly state `__` vs `:` — colon notation is correct for code/appsettings, but wrong for Portal env var Name fields.
 - Always verify the actual env var names in the Portal when diagnosing config-not-overriding bugs in Azure App Service. The log message showing placeholder values is the definitive proof the override failed.
+
+
+### 2026-08-15T19:49:00-03:00 — Phase 10: Round 2 Connection String Diagnosis (Placeholder Persists After `__` Fix)
+
+**Task:** Investigate why `<your-azure-sql-server>.database.windows.net` placeholder still appears in live log stream after Jorgito renamed App Service env vars to double-underscore notation.
+
+**Full code audit performed:**
+- `Program.cs`: `AddDbContext` uses `builder.Configuration.GetConnectionString("DefaultConnection")` — standard, no `??`, no fallback, no custom `ConfigureAppConfiguration`. CLEAN.
+- `appsettings.json`: placeholder `ConnectionStrings:DefaultConnection` value confirmed. This is the fallback and is expected.
+- `appsettings.Production.json`: does NOT exist. Cannot be an override source.
+- `appsettings.Development.json`: exists (LocalDB). Only loaded in Development environment.
+- Config precedence: standard WebApplication.CreateBuilder order — env vars win over json files. No override.
+
+**Conclusion:** Code is 100% correct. The problem is in Azure Portal configuration management.
+
+**Most likely root cause identified:** Azure Portal's Configuration/Environment variables blade requires a two-step save:
+1. Add/edit the row → staged in UI only.
+2. Click top-level **Save** button → persists to Azure + triggers restart.
+
+If step 2 was skipped, the env var was never committed. The running process still reads only `appsettings.json`.
+
+**Verification path for Jorgito:** Portal → App settings tab → confirm `ConnectionStrings__DefaultConnection` exists in list → Kudu Env.cshtml to verify live process env vars → alternatively use "Connection strings" tab (Name=DefaultConnection, Type=SQLAzure) to bypass `__` naming entirely.
+
+**No code changes.** Full checklist appended to `.squad/files/phase10-connection-string-troubleshooting.md`. Decisions updated.
+
+**Lesson — Azure Portal two-step save:** Always confirm the green toast "Successfully updated web app settings" after clicking Save in the Portal's Configuration blade. Without it, the change is ephemeral (only visible in the current UI session, not persisted to Azure Resource Manager). This is a common silent failure point.
+
+**Lesson — Kudu is the ground truth:** When debugging "my env var isn't being read" in Azure App Service, Kudu's Env.cshtml or DebugConsole `printenv` shows exactly what the live process sees — no guessing.
