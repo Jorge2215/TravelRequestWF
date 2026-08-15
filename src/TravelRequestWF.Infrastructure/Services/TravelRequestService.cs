@@ -9,12 +9,14 @@ public class TravelRequestService : ITravelRequestService
     private readonly AppDbContext _db;
     private readonly IBlobStorageService _blob;
     private readonly INotificationService _notification;
+    private readonly IAuditLogger _auditLogger;
 
-    public TravelRequestService(AppDbContext db, IBlobStorageService blob, INotificationService notification)
+    public TravelRequestService(AppDbContext db, IBlobStorageService blob, INotificationService notification, IAuditLogger auditLogger)
     {
         _db = db;
         _blob = blob;
         _notification = notification;
+        _auditLogger = auditLogger;
     }
 
     private static readonly HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -75,25 +77,11 @@ public class TravelRequestService : ITravelRequestService
             await _db.SaveChangesAsync(ct); // get doc.Id
 
             // Audit: exactly RequestDocumentId set, TravelRequestId null
-            _db.AuditLogEntries.Add(new AuditLogEntry
-            {
-                TravelRequestId = null,
-                RequestDocumentId = doc.Id,
-                Action = "DocumentUploaded",
-                ActorId = actorUserId,
-                Timestamp = DateTime.UtcNow
-            });
+            await _auditLogger.LogAsync("DocumentUploaded", null, doc.Id, actorUserId);
         }
 
         // Audit: exactly TravelRequestId set, RequestDocumentId null
-        _db.AuditLogEntries.Add(new AuditLogEntry
-        {
-            TravelRequestId = request.Id,
-            RequestDocumentId = null,
-            Action = "Submitted",
-            ActorId = actorUserId,
-            Timestamp = DateTime.UtcNow
-        });
+        await _auditLogger.LogAsync("Submitted", request.Id, null, actorUserId);
 
         await _db.SaveChangesAsync(ct);
 
@@ -132,15 +120,7 @@ public class TravelRequestService : ITravelRequestService
             throw new InvalidOperationException("Only Pending requests can be approved.");
 
         request.Status = TravelRequestStatus.Approved;
-        _db.AuditLogEntries.Add(new AuditLogEntry
-        {
-            TravelRequestId = request.Id,
-            RequestDocumentId = null,
-            Action = "Approved",
-            Details = comments,
-            ActorId = actorUserId,
-            Timestamp = DateTime.UtcNow
-        });
+        await _auditLogger.LogAsync("Approved", request.Id, null, actorUserId, comments);
         await _db.SaveChangesAsync(ct);
 
         await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
@@ -175,15 +155,7 @@ public class TravelRequestService : ITravelRequestService
             throw new InvalidOperationException("Only Pending requests can be rejected.");
 
         request.Status = TravelRequestStatus.Rejected;
-        _db.AuditLogEntries.Add(new AuditLogEntry
-        {
-            TravelRequestId = request.Id,
-            RequestDocumentId = null,
-            Action = "Rejected",
-            Details = comments,
-            ActorId = actorUserId,
-            Timestamp = DateTime.UtcNow
-        });
+        await _auditLogger.LogAsync("Rejected", request.Id, null, actorUserId, comments);
         await _db.SaveChangesAsync(ct);
 
         await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
@@ -218,15 +190,7 @@ public class TravelRequestService : ITravelRequestService
             throw new InvalidOperationException("Only Pending requests can be returned.");
 
         request.Status = TravelRequestStatus.Returned;
-        _db.AuditLogEntries.Add(new AuditLogEntry
-        {
-            TravelRequestId = request.Id,
-            RequestDocumentId = null,
-            Action = "Returned",
-            Details = comments,
-            ActorId = actorUserId,
-            Timestamp = DateTime.UtcNow
-        });
+        await _auditLogger.LogAsync("Returned", request.Id, null, actorUserId, comments);
         await _db.SaveChangesAsync(ct);
 
         await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);
@@ -261,14 +225,7 @@ public class TravelRequestService : ITravelRequestService
             throw new InvalidOperationException("Only Returned requests can be resubmitted.");
 
         request.Status = TravelRequestStatus.Pending;
-        _db.AuditLogEntries.Add(new AuditLogEntry
-        {
-            TravelRequestId = request.Id,
-            RequestDocumentId = null,
-            Action = "Resubmitted",
-            ActorId = actorUserId,
-            Timestamp = DateTime.UtcNow
-        });
+        await _auditLogger.LogAsync("Resubmitted", request.Id, null, actorUserId);
         await _db.SaveChangesAsync(ct);
 
         await _db.Entry(request).Reference(r => r.Employee).LoadAsync(ct);

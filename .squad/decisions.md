@@ -2,6 +2,96 @@
 
 ## Active Decisions
 
+### 2026-08-14T23:35:00-03:00: Phase 7 — IAuditLogger Extraction (Gandalf)
+**By:** Gandalf
+
+#### What was done
+
+- Created `IAuditLogger` interface in `TravelRequestWF.Infrastructure/Services/` with three methods:
+  - `Task LogAsync(string action, int? travelRequestId, int? requestDocumentId, string actorId, string? details = null)` — queues an `AuditLogEntry` onto the DbContext (no `SaveChangesAsync` inside; caller commits it atomically with the main entity change)
+  - `Task<List<AuditLogEntry>> GetLogByRequestAsync(int travelRequestId)` — returns entries ordered by Timestamp
+  - `Task<List<AuditLogEntry>> GetLogByUserAsync(string actorId)` — returns entries ordered by Timestamp
+- Created `AuditLogger : IAuditLogger` concrete implementation using `AppDbContext` injection.
+- Registered `IAuditLogger` / `AuditLogger` in `Program.cs` as Scoped (before `ITravelRequestService`).
+- Refactored `TravelRequestService`: injected `IAuditLogger` via constructor; replaced all 6 inline `_db.AuditLogEntries.Add(...)` blocks with `await _auditLogger.LogAsync(...)` calls.
+- **Behavioral note:** `LogAsync` does NOT call `SaveChangesAsync` internally. This preserves the existing atomic batching pattern where audit entry + main entity change are saved together in a single `SaveChangesAsync(ct)` call.
+- `GetRequestByIdAsync` left as-is (already includes `AuditLog` via EF Include). Audit trail UI pages remain unchanged.
+- Build: 0 errors, 0 relevant warnings.
+- No schema changes, no EF migrations needed.
+
+### 2026-08-14T23:15:00-03:00: Phase 7 — Audit Logging Gap Analysis & Scoped Plan
+**By:** Aragorn
+
+#### What already exists (pre-Phase 7 — verified by code inspection)
+
+**Entity — `AuditLogEntry`** (`src/TravelRequestWF.Infrastructure/Entities/AuditLogEntry.cs`)
+- Fields present: `Id` (int), `TravelRequestId` (int?), `TravelRequest` nav, `RequestDocumentId` (int?), `RequestDocument` nav, `Action` (string), `Details` (string?), `Timestamp` (DateTime), `ActorId` (string).
+- **Schema vs Phase 7 spec comparison:**
+  | Phase 7 requested | Current entity | Status |
+  |---|---|---|
+  | `Id` | `Id` (int) | ✅ match |
+  | `ActionType` | `Action` (string) | ⚠️ different name, same purpose |
+  | `EntityName` | ❌ absent — uses typed FKs instead | ⚠️ by design (ERD decision, Stage 2) |
+  | `EntityId` | ❌ absent — uses typed FKs instead | ⚠️ by design (ERD decision, Stage 2) |
+  | `UserId` | `ActorId` (string) | ⚠️ different name, same purpose |
+  | `Timestamp` | `Timestamp` (DateTime) | ✅ match |
+  | `Details` | `Details` (string?) | ✅ match |
+  - The entity uses typed FKs (`TravelRequestId`/`RequestDocumentId`) rather than generic `EntityName`/`EntityId` strings. This is a deliberate ERD design choice (proper relational integrity, navigation properties). Renaming or switching to a generic string pair would require a migration and break existing navigation expressions throughout the codebase. **Decision: keep the current schema — it is functionally equivalent and more correct for a relational DB.**
+  - `Action` and `ActorId` are naming variants — no behavior difference. Do NOT rename them (no migration needed, no breakage risk).
+
+**Inline audit writes in `TravelRequestService`** (verified)
+- `Submitted` — ✅ written with `ActorId`, `TravelRequestId`
+- `DocumentUploaded` — ✅ written with `ActorId`, `RequestDocumentId`
+- `Approved` — ✅ written with `ActorId`, `TravelRequestId`, `Details` (comments)
+- `Rejected` — ✅ written with `ActorId`, `TravelRequestId`, `Details` (comments)
+- `Returned` — ✅ written with `ActorId`, `TravelRequestId`, `Details` (comments)
+- `Resubmitted` — ✅ written with `ActorId`, `TravelRequestId`
+- `actorUserId` parameter is passed in from PageModels (Stage 3 Identity in place) — ✅ UserId IS being captured.
+
+**Audit trail UI** — **ALREADY EXISTS** on both:
+- `Employee/Detail.cshtml`: renders "Audit Trail" table for `TravelRequestId`-linked entries, ordered by timestamp.
+- `Manager/Review.cshtml`: same audit trail table.
+- `GetRequestByIdAsync` already `.Include(r => r.AuditLog.OrderBy(a => a.Timestamp))` — entries are eagerly loaded and ready to display.
+
+#### Real gaps found (Phase 7 true delta)
+
+1. **No `IAuditLogger` abstraction exists.** All writes are raw `_context.AuditLogEntries.Add(...)` inline in `TravelRequestService`. This is the primary Phase 7 deliverable: extract an `IAuditLogger` interface + `AuditLogger` service to centralize, standardize, and make audit writes testable in isolation. `TravelRequestService` should be refactored to call `_auditLogger.LogAsync(...)` instead of inline DbContext calls.
+
+2. **No "query by user" capability exists.** The current `GetRequestByIdAsync` loads audit logs per request (query by request ✅), but there is no service method or UI to retrieve audit entries by `ActorId` (query by user ❌). Phase 7 validation requires queryability by both request and user. A service method `GetAuditLogForUserAsync(actorUserId)` should be added to `IAuditLogger` or `ITravelRequestService`. No dedicated UI page is needed for this beyond Pippin's validation query — the existing per-request audit trail on Detail/Review pages already covers the request-query case visually.
+
+3. **`IAuditLogger` interface shape:** Phase 7 asks for Create/Update/Approve/Reject/Return methods. Given the existing schema and action strings, a single generic `LogAsync(action, travelRequestId?, documentId?, actorUserId, details?)` is cleaner and avoids an explosion of single-purpose methods. However, named convenience methods (`LogSubmittedAsync`, `LogApprovedAsync`, etc.) wrapping the generic one improve call-site clarity. Recommend: one generic async method + thin named wrappers, or named methods only. Decision deferred to Gandalf — either is acceptable.
+
+#### Decisions
+
+- **Entity schema: NO CHANGES.** Keep `AuditLogEntry` as-is. Do not rename `Action`→`ActionType` or `ActorId`→`UserId`, do not introduce generic `EntityName`/`EntityId` columns. ERD FK approach is correct; renaming to match Phase 7's spec wording adds migration cost with zero functional gain.
+- **Audit trail UI: ALREADY DONE.** Both Employee/Detail and Manager/Review already render the audit trail. No new Razor Pages needed for this phase.
+- **`IAuditLogger` service: YES — extract it.** Primary Phase 7 value is testability and consistency. Refactor `TravelRequestService` to inject `IAuditLogger` instead of writing inline.
+- **Query-by-user: ADD to `IAuditLogger` or `ITravelRequestService`.** Needed for Phase 7 validation. Backend-only; Pippin validates with a direct query or a simple service test — no new UI page required.
+
+---
+
+#### Scoped Phase 7 task briefs
+
+**Gandalf (Backend):**
+1. Create `IAuditLogger` interface in `TravelRequestWF.Infrastructure` (or a `Core` layer) with:
+   - `Task LogAsync(string action, int? travelRequestId, int? documentId, string actorUserId, string? details = null, CancellationToken ct = default)`
+   - Named wrappers are optional but encouraged: `LogSubmittedAsync`, `LogApprovedAsync`, `LogRejectedAsync`, `LogReturnedAsync`, `LogResubmittedAsync`, `LogDocumentUploadedAsync`.
+   - `Task<IReadOnlyList<AuditLogEntry>> GetLogByRequestAsync(int travelRequestId, CancellationToken ct = default)`
+   - `Task<IReadOnlyList<AuditLogEntry>> GetLogByUserAsync(string actorUserId, CancellationToken ct = default)`
+2. Create `AuditLogger : IAuditLogger` — concrete implementation using `AppDbContext` directly (inject `AppDbContext`). No new migrations; entity schema unchanged.
+3. Register `IAuditLogger` / `AuditLogger` in DI (`Program.cs`), scoped lifetime.
+4. Refactor `TravelRequestService`: remove all 6 inline `_db.AuditLogEntries.Add(...)` blocks; replace with `await _auditLogger.LogAsync(...)` calls (or named wrappers). `TravelRequestService` gets `IAuditLogger` injected via constructor.
+5. Do NOT change `AuditLogEntry` entity or add any EF migrations.
+
+**Legolas (Frontend):** No changes needed. Audit trail UI already exists on Detail and Review pages. ✅
+
+**Pippin (Validation):**
+- Verify each workflow action (Submit, Approve, Reject, Return, Resubmit) generates exactly one `AuditLogEntry` with correct `Action` string, non-null `ActorId`, correct `TravelRequestId`.
+- Verify DocumentUploaded generates one entry per document with `RequestDocumentId` set.
+- Verify `GetLogByRequestAsync(requestId)` returns all entries for a request in chronological order.
+- Verify `GetLogByUserAsync(actorUserId)` returns all entries attributed to that user across all requests.
+- Verify `Timestamp` is a recent UTC value (not default/zero) on each entry.
+
 ### 2026-08-14T22:23:45-03:00: Phase 6 Gap Analysis & Scoped Plan
 **By:** Aragorn
 

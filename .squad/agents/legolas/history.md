@@ -26,6 +26,13 @@
 - `_ViewImports.cshtml` needed `@using TravelRequestWF.Infrastructure.Entities` added so all pages can use `TravelRequestStatus` enum and entity types without per-page `@using` directives.
 - WIP commit + push done. Coordinator should re-invoke Legolas once Gandalf's PageModel properties land to run the final combined build verification.
 
+### 2026-08-14 — Phase 6 Gap 3: file type/size hint on Submit UI
+
+- Added `accept=".pdf,.docx,.jpg,.jpeg,.png,.gif"` to the `<input type="file" multiple>` on `Employee/Submit.cshtml` — browsers now filter the file picker to allowed types.
+- Added `<div class="form-text text-muted">` help text below the input: "Accepted file types: PDF, DOCX, JPG, PNG, GIF. Max 10 MB per file." — matches Bootstrap convention already used nowhere else on this page (validation spans use `text-danger`; `form-text text-muted` is the standard Bootstrap hint style).
+- Build: 0 errors, 0 warnings. Committed `3bbd8fb` and pushed to `dev`.
+- Gandalf is handling backend enforcement (whitelist + 10 MB cap in `TravelRequestService`) in parallel — UI hint is intentionally the only change here.
+
 ### 2026-08-12 — Stage 4 final build pass
 
 - Combined build (`dotnet build TravelRequestWF.slnx`) passed: **0 errors, 0 warnings** once Gandalf's PageModel properties were present.

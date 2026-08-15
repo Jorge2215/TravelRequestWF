@@ -8,6 +8,13 @@
 
 ## Learnings
 
+### 2026-08-14T23:35:00-03:00 — Phase 7: IAuditLogger Extraction
+
+- **Pattern: LogAsync without SaveChangesAsync.** When extracting inline DB-write calls from a service that batches multiple changes in one `SaveChangesAsync`, the extracted method must NOT call `SaveChangesAsync` itself — otherwise the atomic batch is broken into multiple transactions. The caller remains responsible for committing.
+- **Interface location convention:** All service interfaces live in `TravelRequestWF.Infrastructure/Services/` alongside their implementations (`ITravelRequestService`, `IBlobStorageService`, `INotificationService` — now `IAuditLogger` too).
+- **DI registration order matters:** `IAuditLogger` must be registered before `ITravelRequestService` in `Program.cs` since `TravelRequestService` depends on it.
+- **No GetRequestByIdAsync change needed:** The existing query already uses `.Include(r => r.AuditLog.OrderBy(...))` — it returns audit entries as a nav collection on `TravelRequest`. No reason to re-route through `IAuditLogger.GetLogByRequestAsync` since the UI pages consume `TravelRequest.AuditLog`, not a flat list. Leaving it prevents breaking existing page models.
+
 ### 2026-08-10T21:16:33-03:00 — Stage 1 Foundation
 
 - **SDK version:** .NET 10.0.302 is installed and used. EF Core tools are on 10.0.8 (slightly behind runtime 10.0.10) — just a warning, not an error.

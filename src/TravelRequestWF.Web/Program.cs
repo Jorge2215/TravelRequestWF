@@ -43,6 +43,7 @@ builder.Services.Configure<AzureStorageOptions>(
 builder.Services.AddHttpClient<PowerAutomateNotificationService>();
 builder.Services.AddScoped<INotificationService, PowerAutomateNotificationService>();
 builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
+builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<ITravelRequestService, TravelRequestService>();
 
 var app = builder.Build();
