@@ -659,3 +659,53 @@ Added ValidateDocuments static method in TravelRequestService that runs **before
 - BlobStorageService already reads ContainerName from IOptions<AzureStorageOptions> — no code change needed.
 - BlobStorageService.UploadDocumentAsync calls containerClient.CreateIfNotExistsAsync(PublicAccessType.None) — the container will auto-create on first upload in both environments if the account has container-creation permissions.
 - **Jorgito action required:** Ensure the Azure Storage account has a 	ravel-documents-dev container (or that the connection string used in Development has CreateIfNotExistsAsync permission). Production container 	ravel-documents-prod also needs to exist (or same auto-create applies).
+
+
+---
+
+### 2026-08-15T10:45:00-03:00: Phase 9 — Merry Delivery — DailyPendingReportFunction Digest + Deployment Outcome
+**By:** Merry
+
+#### What was done
+
+**Approver navigation property:** Already existed on TravelRequest.Approver (nav) + ApproverId (FK), and AppDbContext already had the fluent config .HasOne(t => t.Approver).WithMany().HasForeignKey(t => t.ApproverId). No migration needed.
+
+**New files:**
+- src/TravelRequestWF.Functions/DigestPayload.cs — PendingRequestItem and ManagerDigestPayload sealed records.
+
+**Modified files:**
+- src/TravelRequestWF.Functions/DailyPendingReportFunction.cs — rewrote RunAsync to query pending requests with .Include(r => r.Approver), group by ApproverId, build ManagerDigestPayload per manager, call PostDigestAsync per manager. Added PostDigestAsync method mirroring Phase 5 PowerAutomateNotificationService.PostToFlowAsync pattern exactly: PLACEHOLDER guard, try/catch per manager (non-blocking), IHttpClientFactory.CreateClient(), logs success/warning/error.
+- src/TravelRequestWF.Functions/Program.cs — added uilder.Services.AddHttpClient().
+- src/TravelRequestWF.Functions/local.settings.json (gitignored) — added "PowerAutomate:FlowCDailyDigestUrl": "PLACEHOLDER_FLOW_C_URL" key.
+
+**Build result:** dotnet build TravelRequestWF.slnx — 0 errors, 2 pre-existing NU1902 NuGet vulnerability warnings (unrelated Azure.Identity package, pre-existing).
+
+**Config key:** PowerAutomate:FlowCDailyDigestUrl — Jorgito must set this in:
+1. Local local.settings.json Values section (once Sam's Flow C is built and has an HTTP trigger URL).
+2. Azure Function App > Configuration > Application Settings.
+
+#### Deployment outcome — MANUAL ACTION REQUIRED
+
+unc (Azure Functions Core Tools) is not installed on this machine, so automated deployment was skipped.
+
+**Jorgito: to deploy the function, run these commands:**
+
+`powershell
+# 1. Install Azure Functions Core Tools (once)
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+# 2. Login to Azure CLI (if not already logged in)
+az login
+
+# 3. Find your Function App name
+az functionapp list --output table
+
+# 4. Publish from the Functions project directory
+cd src\TravelRequestWF.Functions
+func azure functionapp publish <YOUR-FUNCTION-APP-NAME> --dotnet-isolated
+`
+
+After publishing, set these Application Settings in the Azure Portal (Function App > Configuration):
+- SqlConnectionString — same Azure SQL connection string as the Web App.
+- PowerAutomate:FlowCDailyDigestUrl — replace with real Flow C URL once Sam builds it.
+- APPLICATIONINSIGHTS_CONNECTION_STRING — should be auto-set if App Insights is linked; verify.

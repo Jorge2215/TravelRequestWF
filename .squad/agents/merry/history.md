@@ -28,6 +28,22 @@
 
 ## Task History
 
+### Phase 9 — Daily Digest: GroupBy Manager + Flow C HTTP POST
+**Date:** 2026-08-15 | **Requested by:** Jorgito (brief by Aragorn)
+
+**Delivered:**
+- `src/TravelRequestWF.Functions/DigestPayload.cs` — `PendingRequestItem` + `ManagerDigestPayload` sealed records.
+- `src/TravelRequestWF.Functions/DailyPendingReportFunction.cs` — rewrote `RunAsync`: queries pending with `.Include(r => r.Approver)`, groups by `ApproverId`, calls `PostDigestAsync` per manager. Added `PostDigestAsync`: PLACEHOLDER guard + non-blocking try/catch per manager mirroring Phase 5 pattern exactly.
+- `src/TravelRequestWF.Functions/Program.cs` — added `builder.Services.AddHttpClient()`.
+- `local.settings.json` (gitignored) — added `"PowerAutomate:FlowCDailyDigestUrl": "PLACEHOLDER_FLOW_C_URL"`.
+- Full solution build: **0 errors**.
+
+**Deployment:** `func` CLI not installed on machine. Deployment skipped — instructions documented in `decisions.md` and summary below.
+
+**Status:** Code complete. Awaiting: (1) Jorgito installs `func` tools and runs `func azure functionapp publish`; (2) Sam builds Flow C and provides the HTTP trigger URL; (3) Jorgito sets `PowerAutomate:FlowCDailyDigestUrl` in both local.settings.json and Azure Portal.
+
+---
+
 ### Phase 8 — Daily Pending Report Timer Trigger Stub
 **Date:** 2026-08-14 | **Requested by:** Jorgito (brief by Aragorn)
 
@@ -67,3 +83,24 @@
 - Template creates its own `.gitignore` (includes `local.settings.json`) and `Properties/launchSettings.json`.
 - Newer template uses `FunctionsApplication.CreateBuilder` — adapt Program.cs accordingly.
 
+
+### 5. IHttpClientFactory in Azure Functions isolated worker
+- Register with uilder.Services.AddHttpClient() in Program.cs. The Functions host does NOT auto-register it.
+- Inject IHttpClientFactory into the function constructor; call _httpClientFactory.CreateClient() per HTTP operation (not reusing the same instance).
+- IConfiguration is automatically available via DI in the isolated worker model (the host registers it from local.settings.json Values section + environment). Just inject it in the constructor.
+
+### 6. Non-blocking per-item HTTP loop pattern (Phase 5 mirror)
+- Wrap each HTTP call in its own 	ry { ... } catch (Exception ex) { _logger.LogError(ex, ...); }.
+- PLACEHOLDER guard: if (string.IsNullOrWhiteSpace(url) || url.StartsWith("PLACEHOLDER", ...)) { log info; return; }.
+- Return a bool from the helper to track per-manager failure counts for the summary log line.
+- This guarantees one manager's failure never aborts subsequent managers' digests.
+
+### 7. local.settings.json management with special characters
+- The dit tool may fail to match lines containing special characters (URLs with semicolons, asterisks, etc.) even with exact copy-paste.
+- Fallback: use PowerShell Set-Content with a here-string @'...'@ to overwrite the entire file. Reliable regardless of special characters.
+
+### 8. Deployment prerequisites check
+- Always check unc --version and z functionapp list before claiming you can deploy.
+- If unc is not installed, document the install command: 
+pm install -g azure-functions-core-tools@4 --unsafe-perm true.
+- Function App name must be found via z functionapp list --output table (or Azure Portal) — never guess it.

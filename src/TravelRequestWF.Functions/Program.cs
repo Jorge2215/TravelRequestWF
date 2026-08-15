@@ -19,6 +19,8 @@ builder.Services.AddOpenTelemetry()
 var connectionString = builder.Configuration["SqlConnectionString"]
     ?? throw new InvalidOperationException("SqlConnectionString is not configured. Set it in local.settings.json (local) or Application Settings (Azure).");
 
+builder.Services.AddHttpClient();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
 
