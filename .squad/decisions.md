@@ -2,6 +2,47 @@
 
 ## Active Decisions
 
+### 2026-08-14T22:23:45-03:00: Phase 6 Gap Analysis & Scoped Plan
+**By:** Aragorn
+
+#### What already exists (Stage 4 — live, verified)
+- `IBlobStorageService` / `BlobStorageService` uploads files to Azure Blob Storage container `travel-documents`.
+- `RequestDocument` entity (`Id`, `FileName`, `BlobUrl`, `TravelRequestId` FK, Restrict delete) is in the DB and wired into EF migrations.
+- `SubmitRequestDto` accepts `IReadOnlyList<(Stream, FileName, ContentType)>` — **multiple files are already supported** end-to-end in the backend (`TravelRequestService.SubmitRequestAsync` loops over all documents).
+- The Employee Submit page (`Submit.cshtml`) has `<input type="file" multiple />` bound to `List<IFormFile> Documents` — **multi-file upload UI already exists**.
+- `Employee/Detail.cshtml` and `Manager/Review.cshtml` **already render a Documents table** with clickable Download links (`BlobUrl` direct links).
+- Audit log entries of action `DocumentUploaded` are recorded per document.
+- Ownership check on `Employee/Detail`: `if (Request.EmployeeId != employeeId) return Forbid()` — employee cannot see another employee's documents. Manager Review has no such check (managers see all their direct reports' requests by design).
+
+#### Real gaps found (Phase 6 true delta)
+
+1. **File type/size validation — MISSING.** The backend (`TravelRequestService`) and the `BlobStorageService` perform zero validation: any file type and any size is accepted and uploaded. Phase 6 requires a whitelist (PDF, DOCX, common image types) and a max-size cap (e.g. 10 MB per file). This must be added backend-side (service layer) to be tamper-proof; optionally also client-side for UX.
+
+2. **Container-per-environment — NOT IMPLEMENTED.** Both `appsettings.json` (production) and `appsettings.Development.json` use the same hardcoded `ContainerName: "travel-documents"`. Phase 6 explicitly asks for environment-differentiated containers (e.g. `travel-documents-dev` vs `travel-documents-prod`). Fix: update `appsettings.Development.json` to `"ContainerName": "travel-documents-dev"` and the production appsettings/env var to `"travel-documents-prod"`. No code changes needed — the config key is already parameterized in `AzureStorageOptions`; just config values need updating.
+
+3. **Submit UI: no file type hint or size feedback to user.** The file input lacks `accept` attribute and there is no client-side validation message if a user tries to upload a disallowed type. Minor UX gap but required for a complete Phase 6 experience.
+
+#### What is NOT a gap (already done — do not rebuild)
+- Multi-file upload (backend + UI): ✅ done
+- DB linking (`RequestDocument` with `FileName`, `BlobUrl`, `TravelRequestId`): ✅ done
+- Document list on Employee Detail: ✅ done
+- Document list on Manager Review: ✅ done
+- Ownership check for employee document access: ✅ done
+
+---
+
+#### Scoped Phase 6 task briefs
+
+**Gandalf (Backend):**
+- Add file validation to `TravelRequestService.SubmitRequestAsync` (or a new `IDocumentValidator` service): whitelist content types (`application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `image/jpeg`, `image/png`, `image/gif`), reject unknown types with a user-friendly `InvalidOperationException`, enforce max per-file size (10 MB). Throw with a clear message; the PageModel already catches `InvalidOperationException` and surfaces `ErrorMessage`.
+- Update `appsettings.Development.json` `ContainerName` → `"travel-documents-dev"` and confirm production appsettings/env variable is set to `"travel-documents-prod"` (or document it as an Azure App Service environment variable for Jorgito to set).
+
+**Legolas (Frontend):**
+- Add `accept=".pdf,.docx,.jpg,.jpeg,.png,.gif"` to the file input on `Submit.cshtml` for browser-side hint.
+- Add a small help text below the file input: "Accepted: PDF, DOCX, JPG, PNG, GIF. Max 10 MB per file." No other UI changes needed — Detail and Review already show documents correctly.
+
+**No new migrations or entity changes required.**
+
 ### 2026-08-09T21:35:58.924-03:00: Decision
 **By:** Aragorn
 **What:** Connected TravelRequestWF to GitHub repo Jorge2215/TravelRequestWF for issue tracking.
@@ -290,3 +331,27 @@ The following entries were merged from files in `.squad/decisions/inbox/`. Dupli
 **Why:** User confirmed simplicity (Option A) is sufficient — no real scenario requiring a different approver was identified for this PoC scope.
 
 # End of merged inbox
+
+
+---
+
+### 2026-08-14T22:30:00-03:00: Phase 6 — File Upload Validation + Per-Environment Blob Container
+**By:** Gandalf
+
+#### Gap 1 — File type/size validation (IMPLEMENTED)
+
+Added ValidateDocuments static method in TravelRequestService that runs **before** any blob upload (SubmitRequestAsync calls it as the first line). Logic:
+- Allowed extensions (case-insensitive): .pdf, .docx, .jpg, .jpeg, .png, .gif
+- Max file size: 10 MB per file (checked via stream.Length)
+- On violation: throws InvalidOperationException with a user-friendly message naming the offending file and the reason.
+- The existing catch (InvalidOperationException ex) in Employee/Submit.cshtml.cs already surfaces the message to the user as ErrorMessage — no PageModel change needed.
+- Fail-fast: validation is the very first step; no DB write, no blob upload happens for a rejected file.
+
+#### Gap 2 — Container-per-environment (IMPLEMENTED)
+
+- ppsettings.Development.json: "ContainerName": "travel-documents-dev"
+- ppsettings.json (prod baseline): "ContainerName": "travel-documents-prod"
+- Rationale: ppsettings.json serves as the production default (Azure App Service uses the base config); ppsettings.Development.json overrides locally. This matches the standard ASP.NET Core config layering.
+- BlobStorageService already reads ContainerName from IOptions<AzureStorageOptions> — no code change needed.
+- BlobStorageService.UploadDocumentAsync calls containerClient.CreateIfNotExistsAsync(PublicAccessType.None) — the container will auto-create on first upload in both environments if the account has container-creation permissions.
+- **Jorgito action required:** Ensure the Azure Storage account has a 	ravel-documents-dev container (or that the connection string used in Development has CreateIfNotExistsAsync permission). Production container 	ravel-documents-prod also needs to exist (or same auto-create applies).

@@ -218,3 +218,24 @@ EventType values by method:
 
 **Note for Pippin:** When re-testing live, confirm Flow A now returns HTTP 202 and a run appears in the PA portal's run history.
 
+
+
+### 2026-08-14T22:30:00-03:00 — Phase 6: File Upload Validation + Per-Environment Blob Container
+
+**Gap 1 — File type/size validation:**
+- Added ValidateDocuments private static method in TravelRequestService. Checks each document's extension against an allowed set (.pdf, .docx, .jpg, .jpeg, .png, .gif, case-insensitive via HashSet<string>(StringComparer.OrdinalIgnoreCase)) and verifies stream.Length <= 10 MB.
+- Throws InvalidOperationException with a descriptive message including the offending file name and reason.
+- Called as the **first line** of SubmitRequestAsync — fail-fast, no DB write or blob upload occurs for rejected files.
+- Employee/Submit.cshtml.cs already had catch (InvalidOperationException ex) { ErrorMessage = ex.Message; return Page(); } — no PageModel change needed; error surfaces cleanly to the user.
+
+**Gap 2 — Container-per-environment:**
+- ppsettings.Development.json: "ContainerName": "travel-documents-dev"
+- ppsettings.json (production baseline): "ContainerName": "travel-documents-prod"
+- BlobStorageService was already parameterized via IOptions<AzureStorageOptions> — pure config change, no code change.
+- BlobStorageService.UploadDocumentAsync calls containerClient.CreateIfNotExistsAsync(PublicAccessType.None) — containers auto-create on first upload if the storage account allows it. Jorgito may still need to pre-create them in Azure if the connection string's SAS token lacks container-create permission.
+
+**Build:** dotnet build — 0 errors, 0 warnings.
+
+**Lesson — Fail-fast before expensive I/O:** Always validate inputs before touching external resources (blob storage, DBs). Running validation as the first line of the service method is cheaper, cleaner, and avoids partial state (e.g., a DB record created but blob upload rejected mid-loop).
+
+**Lesson — Check existing error handling before adding it:** Submit.cshtml.cs already caught InvalidOperationException — reading the PageModel before implementing saved unnecessary code duplication.

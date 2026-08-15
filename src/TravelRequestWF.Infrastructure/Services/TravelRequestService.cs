@@ -17,8 +17,31 @@ public class TravelRequestService : ITravelRequestService
         _notification = notification;
     }
 
+    private static readonly HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".docx", ".jpg", ".jpeg", ".png", ".gif"
+    };
+    private const long _maxFileSizeBytes = 10L * 1024 * 1024; // 10 MB
+
+    private static void ValidateDocuments(IEnumerable<(Stream Stream, string FileName, string ContentType)> documents)
+    {
+        foreach (var (stream, fileName, _) in documents)
+        {
+            var ext = Path.GetExtension(fileName);
+            if (!_allowedExtensions.Contains(ext))
+                throw new InvalidOperationException(
+                    $"File '{fileName}' has an unsupported type. Allowed: PDF, DOCX, JPG, JPEG, PNG, GIF.");
+
+            if (stream.Length > _maxFileSizeBytes)
+                throw new InvalidOperationException(
+                    $"File '{fileName}' exceeds the 10 MB size limit.");
+        }
+    }
+
     public async Task<TravelRequest> SubmitRequestAsync(int employeeId, string actorUserId, SubmitRequestDto dto, CancellationToken ct = default)
     {
+        ValidateDocuments(dto.Documents);
+
         var employee = await _db.Employees.FindAsync(new object[] { employeeId }, ct)
             ?? throw new InvalidOperationException("Employee not found.");
 
