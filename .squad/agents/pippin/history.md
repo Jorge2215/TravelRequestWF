@@ -206,6 +206,41 @@ If a service validates configuration in its constructor AND is registered as Sco
 - `.squad/files/stage5-notification-test-results.md`
 - `.squad/decisions/inbox/pippin-requestid-uuid-mismatch.md`
 
+### 2026-08-15T00:00:00-03:00 — Phase 6 Document Attachments Validation (FULL PASS)
+
+**What I validated:**
+- `dotnet build TravelRequestWF.slnx` → **0 errors, 0 warnings**. ✅
+- `dotnet ef migrations list` → 5 applied, **0 pending** — no schema change for Phase 6. ✅
+- Azure Storage containers confirmed: `travel-documents`, `travel-documents-dev`, `travel-documents-prod` all exist. ✅
+- App started at `http://localhost:5199`, Development environment, PID confirmed running.
+- All 10 test cases executed and passed.
+
+**TC summary:**
+- TC-1 (build) ✅ — TC-2 (no pending migrations) ✅
+- TC-A (valid PDF upload → HTTP 302, request created, blob in dev container) ✅
+- TC-B (`.exe` rejected with friendly error: "unsupported type. Allowed: PDF, DOCX, JPG, JPEG, PNG, GIF.") ✅ — entire submission blocked
+- TC-C (11 MB file rejected: "exceeds the 10 MB size limit.") ✅ — entire submission blocked
+- TC-D (2 files: PDF + DOCX → both created, both linked to same TravelRequestId) ✅
+- TC-5 (blobs verified in `travel-documents-dev` via `az storage blob list`) ✅
+- TC-6 (DB: `RequestDocument.FileName`, `BlobUrl` (dev container), `TravelRequestId` FK all correct) ✅
+- TC-7 (ownership regression: employee2 → /Account/AccessDenied for employee1's request) ✅
+- TC-8 (frontend hint: `accept` attribute + help text confirmed) ✅
+- TC-9 (Flow A → HTTP 202 on both valid submissions; Stage 5 `Comments` null bug is fixed) ✅ (bonus)
+
+**Key learnings — Phase 6:**
+1. **Validation is extension-based (not magic-bytes).** `Path.GetExtension(fileName)` with a `HashSet<string>` — bypassed by renaming. Acceptable for PoC; note for future hardening.
+2. **Rejection is all-or-nothing (atomic).** `ValidateDocuments()` runs before any DB/blob writes. Any invalid file blocks the entire submission. No partial-state issues.
+3. **`stream.Length` is correct for `IFormFile`.** Works reliably for size checks (tested with 11 MB file).
+4. **Real AzureStorage connection string must be injected via `dotnet user-secrets`** — `appsettings.Development.json` correctly stores only placeholders. Run `dotnet user-secrets set "AzureStorage:ConnectionString" "<real-conn-str>"` on each dev machine.
+5. **`az storage account list` requires setting the correct subscription first** (`az account set --subscription <id>`). The `travelrequeststorage` account is in subscription `bb5ffe61-553c-4019-a657-79878bed7e08`.
+6. **Flow A HTTP 400 from Stage 5 is FIXED** — commit `1d78451` sends empty string for `Comments` in `NotificationPayload`. Both test submissions got HTTP 202.
+
+**Files produced:**
+- `.squad/files/stage6-document-attachments-test-results.md` — full 10-TC results table with evidence
+
+**Gaps/bugs found:**
+- **None.** Phase 6 is clean.
+
 ### 2026-08-13T22:56:55-03:00 — Stage 5 Live E2E Test (Real Power Automate URLs)
 
 **What I validated:**
